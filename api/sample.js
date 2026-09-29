@@ -1,7 +1,7 @@
 // POST /api/sample: the office page asks Claude for something.
-//   { mode: "run", prompt, image? }  -> streams lines of JSON: {"d":"text"} ... then {"end":true,"truncated":false} or {"error":{...}}
+//   { mode: "run", prompt, image?, pdf? }  (pdf = id of a PDF in the person's storage folder)  -> streams lines of JSON: {"d":"text"} ... then {"end":true,"truncated":false} or {"error":{...}}
 //   { mode: "json", prompt }         -> { result } (used by Jarvis in the page)
-import { userFromRequest, spendCall, spendTicket, runAgent, quickJson, toMessages, codeFor, errorResponse, json, OfficeError } from './_lib.js';
+import { userFromRequest, spendCall, spendTicket, runAgent, loadPdf, quickJson, toMessages, codeFor, errorResponse, json, OfficeError } from './_lib.js';
 
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 
@@ -20,6 +20,7 @@ export async function POST(request) {
       return json({ result });
     }
 
+    const pdf = body.pdf ? await loadPdf(user, body.pdf) : null;
     await spendTicket(user);
     const enc = new TextEncoder();
     const ctl = new AbortController();
@@ -28,7 +29,7 @@ export async function POST(request) {
       async start(out) {
         const send = obj => { try { out.enqueue(enc.encode(JSON.stringify(obj) + '\n')); } catch {} };
         try {
-          const res = await runAgent({ messages, image: body.image, signal: ctl.signal, onText: d => send({ d }) });
+          const res = await runAgent({ messages, image: body.image, pdf, signal: ctl.signal, onText: d => send({ d }) });
           send({ end: true, truncated: res.truncated });
         } catch (err) {
           send({ error: { code: codeFor(err), message: err instanceof OfficeError ? err.message : String(err?.message || err).slice(0, 300) } });

@@ -169,6 +169,7 @@
     const body = { mode: 'run', prompt };
     const img = Array.isArray(opts.images) ? opts.images[0] : opts.images;
     if (img) { const small = await shrink(img); body.image = { media_type: 'image/jpeg', data: await toB64(small) }; }
+    if (opts.pdf) body.pdf = opts.pdf;
     const res = await post(body, opts.signal);
     const reader = res.body.getReader(), dec = new TextDecoder();
     let buf = '', text = '';
@@ -273,6 +274,7 @@
 
   // ---------- screenshots ----------
   const assets = {
+    uploadPdf: file => uploadPdf(file),
     async upload(blob, { type } = {}) {
       const small = await shrink(blob);
       const id = crypto.randomUUID() + '.jpg';
@@ -282,6 +284,21 @@
       return { id };
     },
   };
+  // Big PDFs go straight from the browser to the person's storage folder; the server reads them from there.
+  const MAX_PDF = 50 * 1024 * 1024;
+  async function uploadPdf(file) {
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+    if (!isPdf) throw fail('bad_doc', "That file isn't a PDF.");
+    if (file.size > MAX_PDF) throw fail('too_big', `That PDF is ${Math.round(file.size / 1048576)} MB. The limit is 50 MB, so split it or attach just the pages with the problems.`);
+    const head = new TextDecoder().decode(await file.slice(0, 1024).arrayBuffer());
+    if (!head.includes('%PDF')) throw fail('bad_doc', "That file isn't a readable PDF.");
+    const id = crypto.randomUUID() + '.pdf';
+    if (cfg.dev) { await fetch('/dev/blob/' + id, { method: 'PUT', headers: { 'content-type': 'application/pdf' }, body: file }); return { id }; }
+    await fetch('/api/upload', { method: 'POST', headers: await authHeaders(), body: '{}' }).catch(() => {});
+    const { error } = await sb.storage.from('office').upload(`${user.id}/${id}`, file, { contentType: 'application/pdf' });
+    if (error) throw fail('upload_failed', /size|large/i.test(error.message) ? 'That PDF is too big for your storage plan. Try a smaller one.' : "The PDF couldn't be uploaded. Try again.");
+    return { id };
+  }
   window.officeBlob = async id => {
     await ready;
     if (cfg.dev) { const r = await fetch('/dev/blob/' + id); if (!r.ok) throw fail('missing'); return r.blob(); }

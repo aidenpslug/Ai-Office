@@ -70,10 +70,12 @@ end $$;
 revoke all on function public.bump_usage(uuid, integer) from public, anon, authenticated;
 grant execute on function public.bump_usage(uuid, integer) to service_role;
 
--- Screenshots attached to tickets. Each person can only see their own folder.
+-- Screenshots and PDFs attached to tickets. Each person can only see their own folder.
 insert into storage.buckets (id, name, public, file_size_limit)
-values ('office', 'office', false, 10485760)
+values ('office', 'office', false, 52428800)
 on conflict (id) do nothing;
+-- PDFs attached to tickets can be up to 50 MB (the site also raises this itself if needed).
+update storage.buckets set file_size_limit = 52428800 where id = 'office' and coalesce(file_size_limit, 0) < 52428800;
 drop policy if exists "own screenshots: read" on storage.objects;
 drop policy if exists "own screenshots: add" on storage.objects;
 drop policy if exists "own screenshots: remove" on storage.objects;

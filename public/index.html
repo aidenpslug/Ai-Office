@@ -106,6 +106,7 @@ canvas { display: block; max-width: 100%; max-height: 100%; width: auto; height:
 .kind.design { background: #f5b3cd; } .kind.code { background: #f4d76a; } .kind.writing { background: #a9d6f5; } .kind.steps { background: #b8e6c4; } .kind.video { background: #d6c4f5; }
 .preview-b .lv { max-width: 1100px; margin: 0 auto; }
 .photo-in { font-size: 13px; color: var(--muted); }
+.pdf-chip { font-size: 13px; margin: 6px 0; padding: 6px 10px; border-radius: 8px; border: 1px solid rgb(127 127 127 / .35); display: inline-block; }
 .av { width: 26px; height: 26px; border-radius: 50%; flex: none; display: inline-grid; place-items: center; font-family: var(--font-display); color: #fff; font-size: 13px; }
 .av.xs { width: 16px; height: 16px; font-size: 9px; }
 .pill { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; padding: 2px 7px; border-radius: 999px; background: var(--line); color: var(--muted); white-space: nowrap; }
@@ -305,8 +306,8 @@ const FORMATS = {
   design: 'Deliver your work as ONE complete, self-contained HTML document with inline CSS only: no scripts, no external images, fonts or links. If the ticket asks for variations, show them side by side on the page, each labeled. Reply with only the HTML.',
   code: 'Deliver working code as a pull request. Start with a short "Summary" paragraph, then each file as a fenced code block preceded by its file path on its own line. Keep it focused, under about 250 lines total.',
   writing: 'Deliver the finished text in Markdown. No preamble.',
-  steps: 'You are tutoring a student with homework or a quiz. Solve it and teach it. If an image is attached, read the problem from it; if there are several problems, do each in turn. Reply in Markdown with no preamble: "## Problem" restating it in a line or two; "## Steps" with "### Step 1: <short name>" and so on, each step one to three short sentences saying what to do and why, with any working on its own line in a code block; "## Answer" with the final answer in bold; then "## Try one" with a similar practice problem and its answer on the last line after "Answer:". Use plain words a 12-year-old can follow, and double-check the math.',
-  video: 'You are making a short narrated explainer video that walks a student through the solution step by step. If an image is attached, read the problem from it. Reply with only JSON, no code fences or other text, in this shape: {"title":"<short title>","scenes":[{"heading":"<short heading>","lines":["<up to 4 short lines shown on screen: the working, equations or key words>"],"narration":"<1 to 3 friendly spoken sentences explaining this step>"}]}. Narrate like an upbeat TV science-show host: curious, excited and warm, with short punchy sentences, a quick real-world hook in the first scene, and little bursts of energy like "Now here is the cool part!" or "Watch this!" when a step clicks. Keep it clear, not silly, and never impersonate or name a real person. Use 4 to 10 scenes: the first shows the problem, then one scene per step, and the last gives the final answer and a quick tip. Narration is read aloud by a computer voice, so write math the way you would say it ("x squared", "divided by"); on-screen lines can use symbols. Double-check the math.',
+  steps: 'You are tutoring a student with homework or a quiz. Solve it and teach it. If an image or PDF is attached, read the problem from it; if the ticket names particular problems or pages, do only those, otherwise do each problem in turn. Reply in Markdown with no preamble: "## Problem" restating it in a line or two; "## Steps" with "### Step 1: <short name>" and so on, each step one to three short sentences saying what to do and why, with any working on its own line in a code block; "## Answer" with the final answer in bold; then "## Try one" with a similar practice problem and its answer on the last line after "Answer:". Use plain words a 12-year-old can follow, and double-check the math.',
+  video: 'You are making a short narrated explainer video that walks a student through the solution step by step. If an image or PDF is attached, read the problem from it (if the ticket names a particular problem or page, use that one). Reply with only JSON, no code fences or other text, in this shape: {"title":"<short title>","scenes":[{"heading":"<short heading>","lines":["<up to 4 short lines shown on screen: the working, equations or key words>"],"narration":"<1 to 3 friendly spoken sentences explaining this step>"}]}. Narrate like an upbeat TV science-show host: curious, excited and warm, with short punchy sentences, a quick real-world hook in the first scene, and little bursts of energy like "Now here is the cool part!" or "Watch this!" when a step clicks. Keep it clear, not silly, and never impersonate or name a real person. Use 4 to 10 scenes: the first shows the problem, then one scene per step, and the last gives the final answer and a quick tip. Narration is read aloud by a computer voice, so write math the way you would say it ("x squared", "divided by"); on-screen lines can use symbols. Double-check the math.',
 };
 const KIND_LABEL = { design: 'Design', code: 'Code', writing: 'Writing', steps: 'Step-by-step', video: 'Video lesson' };
 const TUTOR = /educat|tutor|teach/i;
@@ -319,6 +320,7 @@ const ERR = {
   daily_limit: "That's today's Jarvis allowance. It resets at midnight (UTC).", ticket_limit: "You've used this month's tickets. Ask the office owner for more.",
   bad_api_key: "The site's Claude API key isn't working. Check it in Vercel.", not_configured: "The site isn't fully set up yet.",
   not_allowed: "Your account isn't allowed to use this office.", network: 'Lost the connection mid-task. Try again.',
+  too_big: 'That PDF is too big for Claude. Attach just the pages with the problems.', bad_doc: "The attached file isn't a readable PDF.",
   bad_image: "The photo's format can't be read. Attach a screenshot or a JPG of the problem instead.",
   invalid_request: "Claude couldn't read this ticket or its photo. Try a clearer screenshot of the problem.",
   upstream_error: 'Claude had a hiccup. Try again.', missing: "The attached photo couldn't be found. Attach it again.",
@@ -353,12 +355,13 @@ function removeTicket(id) {
 }
 
 // ================= agents at work =================
-function buildPrompt(t, s, compact, hasImg) {
+function buildPrompt(t, s, compact, hasImg, hasPdf) {
   const parts = [`You are ${s.name}, the ${s.role} at "The AI Office", a small team of AI agents managed by a human CEO. You are working on one ticket.`];
   if (s.instructions) parts.push(`Your standing instructions from the CEO:\n${s.instructions}`);
   parts.push(`Ticket #${t.num}: ${t.title}` + (t.detail ? `\n\nDetails:\n${t.detail}` : ''));
   const src = t.handoffFrom && getT(t.handoffFrom);
   if (src && src.output) { const by = getS(src.assignee); parts.push(`This ticket was handed to you by ${by ? by.name + ', the ' + by.role : 'a teammate'}, who finished ticket #${src.num} "${src.title}". Build on their work:\n\n${src.output.slice(0, 40000)}`); }
+  if (hasPdf) parts.push(`The CEO attached a PDF${t.pdfName ? ` ("${t.pdfName}")` : ''} to this ticket (the document you can see). Read it closely and find what the ticket is about in it.`);
   if (hasImg) parts.push('The CEO attached a screenshot to this ticket (the image you can see). Study it closely: it shows what they are looking at.');
   if (t.notes?.length) parts.push('Notes the CEO gave you while you worked. Follow them:\n- ' + t.notes.join('\n- '));
   parts.push(FORMATS[t.kind] || FORMATS.writing);
@@ -388,8 +391,8 @@ async function startRun(ticketId) {
       if (lim && lim.images) images = memImages[t.id] || await window.officeBlob(t.imageId);
     } catch { images = null; }
   }
-  const ask = compact => S.sample(buildPrompt(t, s, compact, !!images), {
-    signal: run.ctl.signal, cache: false, ...(images ? { images } : {}),
+  const ask = compact => S.sample(buildPrompt(t, s, compact, !!images, !!t.pdfId), {
+    signal: run.ctl.signal, cache: false, ...(images ? { images } : {}), ...(t.pdfId ? { pdf: t.pdfId } : {}),
     onText: ({ text }) => { run.text = text; run.phase = 'writing'; paintScreens(); },
   });
   try {
@@ -675,7 +678,7 @@ update.ticket = box => {
   const st = box.querySelector('.pill.st'); st.textContent = statusText(t); st.className = 'pill st' + (t.status === 'working' ? ' live' : t.status === 'changes' ? ' warn' : '');
   const s = getS(t.assignee), running = !!(s && runs[s.id] && runs[s.id].ticketId === t.id);
   const dyn = box.querySelector('.dyn');
-  const sig = [t.status, t.kind, t.doneHow, t.imageId, !!memImages[t.id], S.dl ? 1 : 0, running, t.assignee, (t.output || '').length, t.lastError, (t.feedback || []).length, S.sample ? 1 : 0, s && runs[s.id] ? 1 : 0, t.pr].join('|');
+  const sig = [t.status, t.kind, t.doneHow, t.imageId, t.pdfId, !!memImages[t.id], S.dl ? 1 : 0, running, t.assignee, (t.output || '').length, t.lastError, (t.feedback || []).length, S.sample ? 1 : 0, s && runs[s.id] ? 1 : 0, t.pr].join('|');
   if (dyn.dataset.sig === sig) return;
   dyn.dataset.sig = sig; dyn.innerHTML = '';
   const row = document.createElement('div'); row.className = 'btnrow';
@@ -690,6 +693,7 @@ update.ticket = box => {
     else window.officeBlob(t.imageId).then(b => { img.src = URL.createObjectURL(b); }).catch(() => img.remove());
     dyn.append(img);
   }
+  if (t.pdfId) dyn.insertAdjacentHTML('beforeend', `<p class="pdf-chip">PDF attached: ${esc(t.pdfName || 'document.pdf')}${t.pdfSize ? ` (${t.pdfSize < 1048576 ? Math.max(1, Math.round(t.pdfSize / 1024)) + ' KB' : (t.pdfSize / 1048576).toFixed(1) + ' MB'})` : ''}</p>`);
   if (t.status === 'merged' && t.doneHow) dyn.insertAdjacentHTML('beforeend', `<p class="empty">${esc(t.doneHow)}</p>`);
   if (t.status === 'todo' || t.status === 'changes') {
     const busy = s && runs[s.id];
@@ -960,7 +964,7 @@ build.newticket = box => {
       <label>Title<input name="title" required maxlength="70" placeholder="Research permitting startups"></label>
       <label>Details <span>Context, constraints, what done looks like.</span><textarea name="detail" rows="4" maxlength="4000"></textarea></label>
       <div class="row2"><label>Type<select name="kind">${kindOptions()}</select></label><label>Assign to<select name="who">${staffOptions()}</select></label></div>
-      <label class="photo-in">Photo or screenshot (optional) <input type="file" name="photo" accept="image/*"></label>
+      <label class="photo-in">Photo, screenshot or PDF (optional) <input type="file" name="photo" accept="image/*,application/pdf,.pdf"></label>
       <div class="btnrow"><button type="submit" class="ghost" value="0">Create</button><button type="submit" class="primary" value="1">Create and start</button></div>
     </form>`;
   box.querySelector('.x').onclick = hidePanel;
@@ -975,8 +979,16 @@ build.newticket = box => {
     const go = e.submitter && e.submitter.value === '1';
     const t = { id: uid('t'), num: nextNum('num'), title: f.elements.title.value.trim(), detail: f.elements.detail.value.trim(), kind: f.elements.kind.value, assignee: f.elements.who.value || null, status: 'todo', createdAt: Date.now() };
     if (!t.title) return;
-    const photo = f.elements.photo.files[0];
+    let photo = f.elements.photo.files[0], pdf = null;
+    if (photo && (photo.type === 'application/pdf' || /\.pdf$/i.test(photo.name))) { pdf = photo; photo = null; }
     if (photo && window.officeCanRead && !(await window.officeCanRead(photo))) return toast(ERR.bad_image, 8000);
+    if (pdf) {
+      if (!S.assets?.uploadPdf) return toast("PDFs can't be attached here.");
+      const btns = f.querySelectorAll('button[type=submit]'); btns.forEach(b => b.disabled = true);
+      toast(`Uploading ${pdf.name}…`, 60000);
+      try { const r = await S.assets.uploadPdf(pdf); Object.assign(t, { pdfId: r.id, pdfName: pdf.name, pdfSize: pdf.size }); }
+      catch (err) { btns.forEach(b => b.disabled = false); return toast((err && err.message) || "The PDF couldn't be uploaded.", 9000); }
+    }
     await putTicket(t);
     if (photo) await attachBlob(t.id, photo);
     select('ticket', t.id);

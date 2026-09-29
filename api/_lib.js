@@ -1,5 +1,5 @@
 // Shared server helpers. Files in /api that start with "_" are not web endpoints on Vercel.
-import Anthropic from '@anthropic-ai/sdk';
+import Anthropic, { toFile } from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
 
 const e = process.env;
@@ -133,12 +133,47 @@ export function codeFor(err) {
   return 'upstream_error';
 }
 
-// Adds an optional screenshot to the first user turn.
-function withImage(messages, image) {
-  if (!image) return messages;
+// Adds an optional screenshot and PDF to the first user turn.
+function withAttachments(messages, image, doc) {
+  const extra = [];
+  if (doc) extra.push({ type: 'document', source: doc });
+  if (image) extra.push({ type: 'image', source: { type: 'base64', media_type: image.media_type, data: image.data } });
+  if (!extra.length) return messages;
   const [first, ...rest] = messages;
   const text = typeof first.content === 'string' ? [{ type: 'text', text: first.content }] : first.content;
-  return [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: image.media_type, data: image.data } }, ...text] }, ...rest];
+  return [{ role: 'user', content: [...extra, ...text] }, ...rest];
+}
+
+// PDFs attached to tickets live in the person's storage folder. Up to 50 MB (Supabase's free-plan cap).
+export const MAX_PDF = 50 * 1024 * 1024;
+const INLINE_PDF = 20 * 1024 * 1024;  // bigger ones go through Claude's Files API instead of inside the request
+export async function loadPdf(user, id) {
+  if (typeof id !== 'string' || !/^[0-9a-f-]{36}\.pdf$/.test(id)) throw new OfficeError('invalid_request', 'Bad PDF reference.');
+  let bytes;
+  if (config.dev) {
+    const b = (globalThis.__officeDev?.blobs || new Map()).get(id);
+    if (!b) throw new OfficeError('missing', "The attached PDF couldn't be found. Attach it again.");
+    bytes = Buffer.from(b.bytes);
+  } else {
+    const { data, error } = await adminDb().storage.from('office').download(`${user.id}/${id}`);
+    if (error || !data) throw new OfficeError('missing', "The attached PDF couldn't be found. Attach it again.");
+    bytes = Buffer.from(await data.arrayBuffer());
+  }
+  if (bytes.length > MAX_PDF) throw new OfficeError('too_big', 'That PDF is over 50 MB.');
+  if (bytes.subarray(0, 1024).indexOf('%PDF') < 0) throw new OfficeError('bad_doc', "That file isn't a readable PDF.");
+  return bytes;
+}
+// Makes sure the storage folder accepts PDFs this big (the first setup allowed 10 MB). Once per server instance.
+let bucketReady = false;
+export async function ensureBigUploads() {
+  if (config.dev || bucketReady) return;
+  const { error } = await adminDb().storage.updateBucket('office', { public: false, fileSizeLimit: MAX_PDF });
+  if (error) console.warn('Could not raise the upload limit:', error.message); else bucketReady = true;
+}
+async function pdfSource(bytes) {
+  if (bytes.length <= INLINE_PDF) return { source: { type: 'base64', media_type: 'application/pdf', data: bytes.toString('base64') } };
+  const f = await claudeClient().files.upload({ file: await toFile(bytes, 'ticket.pdf', { type: 'application/pdf' }), expires_in_seconds: 3600 });
+  return { source: { type: 'file', file_id: f.id }, cleanup: () => claudeClient().files.delete(f.id).catch(() => {}) };
 }
 
 export function toMessages(prompt) {
@@ -149,14 +184,19 @@ export function toMessages(prompt) {
 }
 
 // An agent doing a ticket: streams text as it writes. Resolves to { text, truncated }.
-export async function runAgent({ messages, image, signal, onText }) {
+export async function runAgent({ messages, image, pdf, signal, onText }) {
   if (config.dev) return fakeRun(messages, signal, onText);
+  const doc = pdf ? await pdfSource(pdf) : null;
+  try { return await runClaude({ messages, image, doc: doc && doc.source, signal, onText }); }
+  finally { doc?.cleanup?.(); }
+}
+async function runClaude({ messages, image, doc, signal, onText }) {
   const body = {
     model: MODEL,
     max_tokens: 32000,
     thinking: { type: 'adaptive' },
     output_config: { effort: 'medium' },
-    messages: withImage(messages, image),
+    messages: withAttachments(messages, image, doc),
   };
   const attempt = async useFallbacks => {
     const stream = useFallbacks
