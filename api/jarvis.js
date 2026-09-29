@@ -56,7 +56,7 @@ ${open}
 Screenshot attached to this command: ${hasImg ? 'YES' : 'no'}
 
 Actions you can use:
-{"type":"create_ticket","agent":"<agent name>","title":"<short title>","details":"<the full request in clear sentences, including anything the CEO said about the screenshot>","kind":"design|code|writing","start":true,"attach_screenshot":${hasImg}}
+{"type":"create_ticket","agent":"<agent name>","title":"<short title>","details":"<the full request in clear sentences, including anything the CEO said about the screenshot>","kind":"design|code|writing|steps|video","start":true,"attach_screenshot":${hasImg}}
 {"type":"call_to_office","agent":"<agent name>"}
 {"type":"note","agent":"<agent name>","text":"<note for an agent who is working right now>"}
 {"type":"start","ticket":<number>}
@@ -65,7 +65,8 @@ Actions you can use:
 Rules:
 - "X, can you do Y" or "have X do Y" means create_ticket for X with start true.
 - Match agent names loosely to the team list (misheard names are common). If nobody fits, don't invent one: say so in reply and suggest hiring them.
-- kind: design for anything visual (pages, layouts, mockups), code for programs and scripts, writing for everything else (research, copy, plans).
+- kind: design for anything visual (pages, layouts, mockups), code for programs and scripts, steps for homework, quiz or school problems (video instead when they ask for a video or an explainer), writing for everything else (research, copy, plans).
+- Homework and school problems go to the educator on the team unless the CEO names someone else.
 - Use note only when the agent is currently working; otherwise create a ticket.
 - Set attach_screenshot true when a screenshot is attached and the command is about it ("this", "the screenshot", "what's on my screen").
 - If the command is unclear, return no actions and ask one short question in reply.
@@ -93,7 +94,7 @@ async function runActions(store, actions, staff, tickets, image) {
       await store.put('staff', id, data); staff.push(s); done.push(`Hired ${name}`);
     } else if (type === 'create_ticket') {
       const s = findAgent(staff, a.agent);
-      const t = { id: uid('t'), num: nextNum(), title: String(a.title || 'New task').slice(0, 70), detail: String(a.details || '').slice(0, 4000), kind: ['design', 'code', 'writing'].includes(a.kind) ? a.kind : 'writing', assignee: s ? s.id : null, status: 'todo', createdAt: now, fromJarvis: true };
+      const t = { id: uid('t'), num: nextNum(), title: String(a.title || 'New task').slice(0, 70), detail: String(a.details || '').slice(0, 4000), kind: ['design', 'code', 'writing', 'steps', 'video'].includes(a.kind) ? a.kind : 'writing', assignee: s ? s.id : null, status: 'todo', createdAt: now, fromJarvis: true };
       let note = `Ticket #${t.num} for ${s ? s.name : 'nobody yet'}`;
       if (image) { t.imageId = await store.uploadImage(image.bytes, image.type); image = null; note += ' with your screenshot'; }
       if (a.start !== false && s) { t.autoStart = true; queued = true; }

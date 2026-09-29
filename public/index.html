@@ -103,7 +103,9 @@ canvas { display: block; max-width: 100%; max-height: 100%; width: auto; height:
 .tk-meta { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--muted); }
 .tk-meta .grow { flex: 1; }
 .kind { font-size: 10.5px; padding: 1px 6px; border-radius: 4px; font-weight: 700; color: #3b2f10; }
-.kind.design { background: #f5b3cd; } .kind.code { background: #f4d76a; } .kind.writing { background: #a9d6f5; }
+.kind.design { background: #f5b3cd; } .kind.code { background: #f4d76a; } .kind.writing { background: #a9d6f5; } .kind.steps { background: #b8e6c4; } .kind.video { background: #d6c4f5; }
+.preview-b .lv { max-width: 1100px; margin: 0 auto; }
+.photo-in { font-size: 13px; color: var(--muted); }
 .av { width: 26px; height: 26px; border-radius: 50%; flex: none; display: inline-grid; place-items: center; font-family: var(--font-display); color: #fff; font-size: 13px; }
 .av.xs { width: 16px; height: 16px; font-size: 9px; }
 .pill { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; padding: 2px 7px; border-radius: 999px; background: var(--line); color: var(--muted); white-space: nowrap; }
@@ -302,8 +304,11 @@ const FORMATS = {
   design: 'Deliver your work as ONE complete, self-contained HTML document with inline CSS only: no scripts, no external images, fonts or links. If the ticket asks for variations, show them side by side on the page, each labeled. Reply with only the HTML.',
   code: 'Deliver working code as a pull request. Start with a short "Summary" paragraph, then each file as a fenced code block preceded by its file path on its own line. Keep it focused, under about 250 lines total.',
   writing: 'Deliver the finished text in Markdown. No preamble.',
+  steps: 'You are tutoring a student with homework or a quiz. Solve it and teach it. If an image is attached, read the problem from it; if there are several problems, do each in turn. Reply in Markdown with no preamble: "## Problem" restating it in a line or two; "## Steps" with "### Step 1: <short name>" and so on, each step one to three short sentences saying what to do and why, with any working on its own line in a code block; "## Answer" with the final answer in bold; then "## Try one" with a similar practice problem and its answer on the last line after "Answer:". Use plain words a 12-year-old can follow, and double-check the math.',
+  video: 'You are making a short narrated explainer video that walks a student through the solution step by step. If an image is attached, read the problem from it. Reply with only JSON, no code fences or other text, in this shape: {"title":"<short title>","scenes":[{"heading":"<short heading>","lines":["<up to 4 short lines shown on screen: the working, equations or key words>"],"narration":"<1 to 3 friendly spoken sentences explaining this step>"}]}. Use 4 to 10 scenes: the first shows the problem, then one scene per step, and the last gives the final answer and a quick tip. Narration is read aloud by a computer voice, so write math the way you would say it ("x squared", "divided by"); on-screen lines can use symbols. Double-check the math.',
 };
-const KIND_LABEL = { design: 'Design', code: 'Code', writing: 'Writing' };
+const KIND_LABEL = { design: 'Design', code: 'Code', writing: 'Writing', steps: 'Step-by-step', video: 'Video lesson' };
+const TUTOR = /educat|tutor|teach/i;
 const HIDE_CODES = ['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed', 'not_configured', 'not_allowed'];
 const ERR = {
   rate_limited: 'Hit a usage limit. Try again in a bit.', session_expired: 'Your sign-in expired. Reload the page, then retry.',
@@ -610,7 +615,7 @@ function twoStep(box, label, question, yes, fn) {
   };
   reset();
 }
-function kindOptions() { return Object.entries(KIND_LABEL).map(([k, v]) => `<option value="${k}">${v}${k === 'design' ? ' (shows as a page)' : ''}</option>`).join(''); }
+function kindOptions() { return Object.entries(KIND_LABEL).map(([k, v]) => `<option value="${k}">${v}${k === 'design' ? ' (shows as a page)' : k === 'steps' ? ' (homework help)' : k === 'video' ? ' (homework help)' : ''}</option>`).join(''); }
 function staffOptions() { return '<option value="">Unassigned</option>' + staffSorted().map(x => `<option value="${x.id}">${esc(x.name)}, ${esc(x.role)}</option>`).join(''); }
 function statusText(t) { return { todo: 'Open', changes: 'Changes requested', working: 'In progress', review: 'PR waiting on you', merged: 'Done' }[t.status] || t.status; }
 
@@ -745,8 +750,9 @@ function finishBox(t) {
 function fileBase(t) { return (t.title || 'work').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase().slice(0, 60) || 'work'; }
 async function downloadWork(t) {
   if (!S.dl) { toast("Downloads aren't available in this view."); return; }
-  const filename = fileBase(t) + (t.kind === 'design' ? '.html' : '.md');
-  const data = t.kind === 'design' ? extractHtml(t.output || '') : (t.output || '');
+  const lesson = t.kind === 'video' && parseLesson(t.output);
+  const filename = fileBase(t) + (t.kind === 'design' || lesson ? '.html' : '.md');
+  const data = lesson ? lessonHtml(t, lesson) : t.kind === 'design' ? extractHtml(t.output || '') : (t.output || '');
   try {
     await S.dl.save({ filename, data });
     if (t.status === 'review') patchTicket(t.id, { status: 'merged', mergedAt: Date.now(), doneHow: 'Downloaded as ' + filename });
@@ -769,12 +775,109 @@ async function handOff(t, toId, note, kind, start) {
   else if (start) toast(`${to.name} is busy. #${nt.num} is waiting in the queue.`);
 }
 function renderOutput(t) {
+  if (t.kind === 'video') {
+    const d = document.createElement('div'); d.className = 'lesson';
+    const data = parseLesson(t.output);
+    if (!data) { d.innerHTML = '<p class="err">This video lesson came back in a shape the player can\'t read. Request changes to try again.</p>'; return d; }
+    const off = mountLessonPlayer(d, data);
+    const watch = new MutationObserver(() => { if (!d.isConnected) { off(); watch.disconnect(); } });
+    watch.observe(document.body, { childList: true, subtree: true });
+    return d;
+  }
   if (t.kind === 'design') {
     const f = document.createElement('iframe'); f.setAttribute('sandbox', ''); f.title = 'Design preview'; f.srcdoc = extractHtml(t.output || '');
     return f;
   }
   const d = document.createElement('div'); d.className = 'md'; d.innerHTML = md(t.output || ''); return d;
 }
+// ================= Bill's video lessons =================
+// A "video" is a list of scenes Claude writes as JSON. This player shows each scene's lines one by one and reads
+// the narration aloud with the browser's voice. The same code is saved into downloaded lessons, so it stays self-contained.
+const LESSON_CSS = `
+.lv { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; font-family: "Atkinson Hyperlegible", system-ui, sans-serif; }
+.lv-stage { position: relative; flex: 1; min-height: 220px; aspect-ratio: 16 / 9; max-height: 100%; background: radial-gradient(120% 90% at 20% 0%, #1f3b46, #0f1a1f); color: #eaf7f3; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; justify-content: center; padding: 5% 7%; }
+.lv-num { position: absolute; top: 12px; left: 16px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #8fd9c9; }
+.lv-h { margin: 0 0 14px; font-size: clamp(18px, 3.2vw, 34px); line-height: 1.15; font-weight: 700; }
+.lv-lines { display: flex; flex-direction: column; gap: 10px; }
+.lv-line { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: clamp(14px, 2.2vw, 24px); background: rgb(255 255 255 / .07); border-left: 3px solid #4fc1b7; padding: 6px 12px; border-radius: 4px; opacity: 0; transform: translateY(8px); transition: opacity .5s, transform .5s; white-space: pre-wrap; }
+.lv-line.on { opacity: 1; transform: none; }
+.lv-cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 16px; background: linear-gradient(transparent, rgb(0 0 0 / .65)); font-size: clamp(12px, 1.6vw, 16px); line-height: 1.35; min-height: 3em; }
+.lv-bar { display: flex; gap: 4px; }
+.lv-bar i { flex: 1; height: 4px; border-radius: 2px; background: rgb(127 127 127 / .3); overflow: hidden; }
+.lv-bar i b { display: block; height: 100%; width: 0; background: #4fc1b7; }
+.lv-ctl { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.lv-ctl button { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 8px; border: 1px solid rgb(127 127 127 / .4); background: transparent; color: inherit; cursor: pointer; }
+.lv-ctl button.lv-play { background: #1f7a74; color: #fff; border-color: #1f7a74; min-width: 76px; }
+.lv-ctl label { font-size: 13px; display: flex; gap: 4px; align-items: center; }
+.lv-ctl .lv-sp { flex: 1; }
+.lv .lv-h { color: #eaf7f3; text-transform: none; letter-spacing: 0; font-family: inherit; }
+.lv .lv-ctl label { flex-direction: row; font-weight: 400; color: inherit; text-transform: none; letter-spacing: 0; margin: 0; }
+.lv .lv-ctl select { font: inherit; font-size: 13px; width: auto; padding: 4px 6px; }`;
+function mountLessonPlayer(root, data) {
+  const scenes = (Array.isArray(data && data.scenes) ? data.scenes : []).filter(s => s && (s.heading || s.narration || (s.lines || []).length));
+  if (!scenes.length) { root.textContent = "This video couldn't be read."; return () => {}; }
+  const synth = window.speechSynthesis, canTalk = !!(synth && window.SpeechSynthesisUtterance);
+  root.innerHTML = '<div class="lv"><div class="lv-stage"><div class="lv-num"></div><h3 class="lv-h"></h3><div class="lv-lines"></div><div class="lv-cap"></div></div>' +
+    '<div class="lv-bar">' + scenes.map(() => '<i><b></b></i>').join('') + '</div>' +
+    '<div class="lv-ctl"><button type="button" class="lv-play">Play</button><button type="button" class="lv-prev">Back</button><button type="button" class="lv-next">Next</button><span class="lv-sp"></span>' +
+    (canTalk ? '<label><input type="checkbox" class="lv-voice" checked> Voice</label>' : '') +
+    '<label>Speed <select class="lv-rate"><option value="0.85">Slow</option><option value="1" selected>Normal</option><option value="1.2">Fast</option></select></label></div></div>';
+  const q = s => root.querySelector(s);
+  const bars = [...root.querySelectorAll('.lv-bar b')];
+  let i = 0, playing = false, timers = [], t0 = 0, dur = 0, raf = 0, alive = true;
+  const voiceOn = () => canTalk && (!q('.lv-voice') || q('.lv-voice').checked);
+  const rate = () => parseFloat(q('.lv-rate').value) || 1;
+  const clear = () => { timers.forEach(clearTimeout); timers = []; cancelAnimationFrame(raf); if (canTalk) synth.cancel(); };
+  function show(n) {
+    const s = scenes[n];
+    q('.lv-num').textContent = 'Step ' + (n + 1) + ' of ' + scenes.length;
+    q('.lv-h').textContent = s.heading || '';
+    q('.lv-cap').textContent = s.narration || '';
+    const box = q('.lv-lines'); box.innerHTML = '';
+    (s.lines || []).slice(0, 6).forEach(l => { const d = document.createElement('div'); d.className = 'lv-line'; d.textContent = String(l); box.append(d); });
+    bars.forEach((b, k) => { b.style.width = k < n ? '100%' : '0'; });
+  }
+  function reveal() { root.querySelectorAll('.lv-line').forEach(d => d.classList.add('on')); }
+  function tick() { if (!playing) return; const p = Math.min(1, (performance.now() - t0) / dur); bars[i].style.width = (p * 100) + '%'; raf = requestAnimationFrame(tick); }
+  function next() { if (!alive) return; if (i < scenes.length - 1) { i++; play(); } else { stop(); bars[i].style.width = '100%'; q('.lv-play').textContent = 'Replay'; } }
+  function play() {
+    clear(); playing = true; show(i); q('.lv-play').textContent = 'Pause';
+    if (window.__lessonPlaying && window.__lessonPlaying !== stop) window.__lessonPlaying();
+    window.__lessonPlaying = stop;
+    const s = scenes[i], text = String(s.narration || s.heading || '');
+    const lines = [...root.querySelectorAll('.lv-line')];
+    dur = Math.max(3500, text.length * 62 / rate()) + 700;
+    lines.forEach((d, k) => timers.push(setTimeout(() => d.classList.add('on'), 300 + k * Math.min(1400, (dur - 800) / Math.max(1, lines.length)))));
+    t0 = performance.now(); tick();
+    if (voiceOn() && text) {
+      const u = new SpeechSynthesisUtterance(text); u.rate = rate();
+      let done = false; const fin = () => { if (done || !playing) return; done = true; reveal(); timers.push(setTimeout(next, 600)); };
+      u.onend = fin; u.onerror = () => timers.push(setTimeout(fin, Math.max(0, dur - (performance.now() - t0))));  // no voice: fall back to the timer
+      timers.push(setTimeout(fin, dur + 8000));
+      synth.speak(u);
+    } else timers.push(setTimeout(() => { reveal(); next(); }, dur));
+  }
+  function stop() { playing = false; clear(); q('.lv-play').textContent = 'Play'; if (window.__lessonPlaying === stop) window.__lessonPlaying = null; }
+  q('.lv-play').onclick = () => { if (playing) { stop(); reveal(); } else { if (q('.lv-play').textContent === 'Replay') i = 0; play(); } };
+  q('.lv-next').onclick = () => { const was = playing; stop(); i = Math.min(scenes.length - 1, i + 1); show(i); if (was) play(); else reveal(); };
+  q('.lv-prev').onclick = () => { const was = playing; stop(); i = Math.max(0, i - 1); show(i); if (was) play(); else reveal(); };
+  show(0); reveal();
+  return () => { alive = false; stop(); };
+}
+function parseLesson(text) {
+  const s = String(text || ''), a = s.indexOf('{'), b = s.lastIndexOf('}');
+  if (a < 0 || b <= a) return null;
+  try { return JSON.parse(s.slice(a, b + 1)); } catch { return null; }
+}
+function lessonHtml(t, data) {
+  const title = esc(data.title || t.title || 'Video lesson');
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b1216;color:#eaf7f3;padding:16px;box-sizing:border-box}main{width:min(960px,100%)}h1{font-family:system-ui,sans-serif;font-size:20px;margin:0 0 12px}${LESSON_CSS}</style></head>
+<body><main><h1>${title}</h1><div id="p"></div></main><script>${mountLessonPlayer.toString()}
+mountLessonPlayer(document.getElementById('p'), ${JSON.stringify(data).replace(/</g, '\\u003c')});<\/script></body></html>`;
+}
+
+(() => { const st = document.createElement('style'); st.textContent = LESSON_CSS; document.head.append(st); })();
 function openPreview(id) {
   const t = getT(id); if (!t) return;
   const p = $('preview');
@@ -811,12 +914,14 @@ build.newticket = box => {
       <label>Title<input name="title" required maxlength="70" placeholder="Research permitting startups"></label>
       <label>Details <span>Context, constraints, what done looks like.</span><textarea name="detail" rows="4" maxlength="4000"></textarea></label>
       <div class="row2"><label>Type<select name="kind">${kindOptions()}</select></label><label>Assign to<select name="who">${staffOptions()}</select></label></div>
+      <label class="photo-in">Photo or screenshot (optional) <input type="file" name="photo" accept="image/*"></label>
       <div class="btnrow"><button type="submit" class="ghost" value="0">Create</button><button type="submit" class="primary" value="1">Create and start</button></div>
     </form>`;
   box.querySelector('.x').onclick = hidePanel;
   const f = box.querySelector('form');
   f.elements.who.value = getS(insp.id) ? insp.id : (selectedId || '');
-  f.elements.kind.value = 'writing';
+  const fitKind = () => { const s = getS(f.elements.who.value); f.elements.kind.value = s && TUTOR.test(s.role) ? 'steps' : 'writing'; };
+  fitKind(); f.elements.who.onchange = fitKind;
   f.querySelector('button[value="1"]').disabled = !S.sample;
   f.querySelector('input').focus();
   f.onsubmit = async e => {
@@ -825,6 +930,8 @@ build.newticket = box => {
     const t = { id: uid('t'), num: nextNum('num'), title: f.elements.title.value.trim(), detail: f.elements.detail.value.trim(), kind: f.elements.kind.value, assignee: f.elements.who.value || null, status: 'todo', createdAt: Date.now() };
     if (!t.title) return;
     await putTicket(t);
+    const photo = f.elements.photo.files[0];
+    if (photo) await attachBlob(t.id, photo);
     select('ticket', t.id);
     const s = getS(t.assignee);
     if (go && s && !runs[s.id]) startRun(t.id);
@@ -961,7 +1068,7 @@ ${officeSnapshot()}
 Screenshot attached to this command: ${hasImg ? 'YES' : 'no'}
 
 Actions you can use:
-{"type":"create_ticket","agent":"<agent name>","title":"<short title>","details":"<the full request in clear sentences, including anything the CEO said about the screenshot>","kind":"design|code|writing","start":true,"attach_screenshot":${hasImg}}
+{"type":"create_ticket","agent":"<agent name>","title":"<short title>","details":"<the full request in clear sentences, including anything the CEO said about the screenshot>","kind":"design|code|writing|steps|video","start":true,"attach_screenshot":${hasImg}}
 {"type":"call_to_office","agent":"<agent name>"}
 {"type":"note","agent":"<agent name>","text":"<note for an agent who is working right now>"}
 {"type":"start","ticket":<number>}
@@ -971,7 +1078,8 @@ Actions you can use:
 Rules:
 - "X, can you do Y" or "have X do Y" means create_ticket for X with start true.
 - Match agent names loosely to the team list (misheard names are common). If nobody fits, don't invent one: say so in reply and suggest hiring them.
-- kind: design for anything visual (pages, layouts, mockups), code for programs and scripts, writing for everything else (research, copy, plans).
+- kind: design for anything visual (pages, layouts, mockups), code for programs and scripts, steps for homework, quiz or school problems (video instead when they ask for a video or an explainer), writing for everything else (research, copy, plans).
+- Homework and school problems go to the educator on the team unless the CEO names someone else.
 - Use note only when the agent is currently working; otherwise create a ticket.
 - Set attach_screenshot true when a screenshot is attached and the command is about it ("this", "the screenshot", "what's on my screen").
 - If the command is unclear, return no actions and ask one short question in reply.
@@ -992,6 +1100,14 @@ CEO's command: "${command.replace(/"/g, "'")}"`;
     if (e && HIDE_CODES.includes(e.code)) { S.sample = null; showNotice(); }
     jSay('jarvis', (e && ERR[e.code]) || "Sorry, I didn't catch that. Try saying it another way.");
   }
+}
+async function attachBlob(ticketId, blob) {
+  memImages[ticketId] = blob;
+  if (!S.assets) return;
+  try {
+    const r = await S.assets.upload(blob, { type: blob.type && /^image\/(png|jpeg|gif|webp)$/.test(blob.type) ? blob.type : 'image/png' });
+    await patchTicket(ticketId, { imageId: r.id });
+  } catch { toast("The photo is attached for now but couldn't be saved."); }
 }
 async function attachImageTo(ticketId) {
   if (!J.image) return false;
@@ -1020,7 +1136,7 @@ async function runJarvisActions(actions) {
       newHires.add(s.id); await putStaff(s); done.push(`Hired ${name}`);
     } else if (type === 'create_ticket') {
       const s = findAgent(a.agent);
-      const t = { id: uid('t'), num: nextNum('num'), title: String(a.title || 'New task').slice(0, 70), detail: String(a.details || '').slice(0, 4000), kind: ['design', 'code', 'writing'].includes(a.kind) ? a.kind : 'writing', assignee: s ? s.id : null, status: 'todo', createdAt: Date.now(), fromJarvis: true };
+      const t = { id: uid('t'), num: nextNum('num'), title: String(a.title || 'New task').slice(0, 70), detail: String(a.details || '').slice(0, 4000), kind: KIND_LABEL[a.kind] ? a.kind : 'writing', assignee: s ? s.id : null, status: 'todo', createdAt: Date.now(), fromJarvis: true };
       await putTicket(t);
       let note = `Ticket #${t.num} for ${s ? s.name : 'nobody yet'}`;
       if ((a.attach_screenshot || J.image) && await attachImageTo(t.id)) note += ' with your screenshot';
@@ -1395,7 +1511,7 @@ use('db').then(db => {
   } else {
     S.mode = 'local';
     const now = Date.now();
-    [['Juno', 'Frontend engineer', 'Prefer plain HTML and CSS. Keep it accessible.'], ['Ren', 'Product designer', 'Bold, clean layouts. Always offer options.'], ['Theo', 'Copywriter', 'Short sentences. No jargon.']]
+    [['Juno', 'Frontend engineer', 'Prefer plain HTML and CSS. Keep it accessible.'], ['Ren', 'Product designer', 'Bold, clean layouts. Always offer options.'], ['Bill', 'Educator', 'You are a patient tutor. Explain in short, easy steps and double-check the answer.']]
       .forEach(([name, role, instructions], i) => S.staff.push({ id: 'demo' + i, name, role, instructions, color: PALETTE[i], hiredAt: now + i }));
     S.tickets.push({ id: 'demo-t1', num: 1, title: 'Example: three hero section variations', detail: 'For a note-taking app called Inkwell.', kind: 'design', assignee: 'demo1', status: 'todo', createdAt: now });
     syncActors(); renderAll();

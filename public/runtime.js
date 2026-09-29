@@ -6,8 +6,10 @@
   const STARTERS = [
     ['Juno', 'Frontend engineer', 'Prefer plain HTML and CSS. Keep it accessible.'],
     ['Ren', 'Product designer', 'Bold, clean layouts. Always offer options.'],
-    ['Theo', 'Copywriter', 'Short sentences. No jargon.'],
+    ['Bill', 'Educator', 'You are a patient tutor. Explain homework and quiz problems in short, easy steps, say why each step works, and double-check the final answer. Never give just the answer without the steps.'],
   ];
+  const BILL = 2;
+  const TUTOR_ROLE = /educat|tutor|teach/i;
   const fail = (code, message, text) => Object.assign(new Error(message || code), { code, text });
   let sb = null, user = null, cfg = null, me = null;
   let signedIn; const ready = new Promise(r => (signedIn = r));
@@ -102,7 +104,17 @@
           user_id: u.id, collection: 'staff', id: 'starter' + i, data: { name, role, instructions, color: PALETTE[i], hiredAt: now + i },
         })), { onConflict: 'user_id,collection,id' });
       }
-      await sb.auth.updateUser({ data: { office_seeded: true } });
+      await sb.auth.updateUser({ data: { office_seeded: true, bill_joined: true } });
+    } else if (!u.user_metadata?.bill_joined) {
+      // Offices made before Bill existed get him once, if there's a free desk.
+      const { data: staff } = await sb.from('docs').select('id,data').eq('collection', 'staff');
+      const rows = staff || [];
+      if (rows.length < 8 && !rows.some(r => TUTOR_ROLE.test(r.data?.role || ''))) {
+        const used = new Set(rows.map(r => r.data?.color));
+        const [name, role, instructions] = STARTERS[BILL];
+        await sb.from('docs').upsert({ user_id: u.id, collection: 'staff', id: 'starter-bill', data: { name, role, instructions, color: PALETTE.find(c => !used.has(c)) || PALETTE[2], hiredAt: Date.now() } }, { onConflict: 'user_id,collection,id' });
+      }
+      await sb.auth.updateUser({ data: { bill_joined: true } });
     }
     document.getElementById('gate')?.remove();
     signedIn();

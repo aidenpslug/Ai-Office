@@ -41,7 +41,7 @@ http.createServer(async (req, res) => {
     }
     if (process.env.OFFICE_DEV === '1' && url.pathname === '/dev/seed' && !mem.seeded) {
       mem.seeded = true;
-      [['Juno', 'Frontend engineer'], ['Ren', 'Product designer'], ['Theo', 'Copywriter']].forEach(([name, role], i) =>
+      [['Juno', 'Frontend engineer'], ['Ren', 'Product designer'], ['Bill', 'Educator']].forEach(([name, role], i) =>
         mem.docs.set('staff/starter' + i, { collection: 'staff', id: 'starter' + i, data: { name, role, instructions: '', color: ['#3fa37a', '#e06fa6', '#5a8de0'][i], hiredAt: i } }));
       mem.version++; return send(res, 200, {});
     }

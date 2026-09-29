@@ -205,7 +205,14 @@ export function parseJson(text) {
 async function fakeRun(messages, signal, onText) {
   const ask = messages.map(m => m.content).join('\n');
   const html = /ONE complete, self-contained HTML/.test(ask);
-  const out = html
+  const video = /narrated explainer video/.test(ask);
+  const out = video
+    ? JSON.stringify({ title: 'Solving 2x + 3 = 11', scenes: [
+      { heading: 'The problem', lines: ['2x + 3 = 11'], narration: 'We want to find x in two x plus three equals eleven.' },
+      { heading: 'Take away 3', lines: ['2x + 3 - 3 = 11 - 3', '2x = 8'], narration: 'Subtract three from both sides, so two x equals eight.' },
+      { heading: 'Divide by 2', lines: ['x = 8 / 2', 'x = 4'], narration: 'Divide both sides by two. X equals four.' },
+      { heading: 'Answer', lines: ['x = 4', 'Check: 2(4) + 3 = 11'], narration: 'The answer is four. Always plug it back in to check.' }] })
+    : html
     ? '<!doctype html><html><body style="font-family:sans-serif;padding:40px"><h1>Test design</h1><p>This is a stand-in result from local testing.</p></body></html>'
     : '## Test result\n\nThis is a stand-in result from local testing. ' + 'The agent is writing more words here. '.repeat(12);
   let text = '';
