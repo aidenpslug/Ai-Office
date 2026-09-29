@@ -83,3 +83,57 @@ create policy "own screenshots: add" on storage.objects for insert to authentica
   with check (bucket_id = 'office' and (storage.foldername(name))[1] = auth.uid()::text);
 create policy "own screenshots: remove" on storage.objects for delete to authenticated
   using (bucket_id = 'office' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ===== Who may use the office, and how many tickets each person gets per month =====
+-- Only the server reads and writes these. The first person to sign in becomes the owner.
+create table if not exists public.members (
+  email text primary key check (email = lower(email)),
+  role text not null default 'member' check (role in ('owner', 'member')),
+  monthly_tickets integer check (monthly_tickets is null or monthly_tickets >= 0),  -- empty means unlimited
+  note text,
+  created_at timestamptz not null default now()
+);
+alter table public.members enable row level security;
+create unique index if not exists members_one_owner on public.members ((role)) where role = 'owner';
+
+create table if not exists public.ticket_usage (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  month text not null,
+  tickets integer not null default 0,
+  primary key (user_id, month)
+);
+alter table public.ticket_usage enable row level security;
+drop policy if exists "own tickets: read" on public.ticket_usage;
+create policy "own tickets: read" on public.ticket_usage for select to authenticated using (user_id = auth.uid());
+
+-- Counts one agent run. Returns the new monthly count, or -1 when the allowance is used up (null limit = unlimited).
+create or replace function public.spend_ticket(p_user uuid, p_limit integer)
+returns integer language plpgsql security definer set search_path = public as $$
+declare n integer; m text := to_char(now() at time zone 'utc', 'YYYY-MM');
+begin
+  insert into public.ticket_usage (user_id, month, tickets) values (p_user, m, 1)
+  on conflict (user_id, month) do update set tickets = public.ticket_usage.tickets + 1
+  returning tickets into n;
+  if p_limit is not null and n > p_limit then
+    update public.ticket_usage set tickets = tickets - 1 where user_id = p_user and month = m;
+    return -1;
+  end if;
+  return n;
+end $$;
+revoke all on function public.spend_ticket(uuid, integer) from public, anon, authenticated;
+grant execute on function public.spend_ticket(uuid, integer) to service_role;
+
+-- Makes this email the owner if the office has none yet. Returns true when the email is the owner.
+create or replace function public.claim_owner(p_email text)
+returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from public.members where role = 'owner') then
+    insert into public.members (email, role, monthly_tickets) values (lower(p_email), 'owner', null)
+    on conflict (email) do update set role = 'owner', monthly_tickets = null;
+  end if;
+  return exists (select 1 from public.members where email = lower(p_email) and role = 'owner');
+exception when unique_violation then
+  return exists (select 1 from public.members where email = lower(p_email) and role = 'owner');
+end $$;
+revoke all on function public.claim_owner(text) from public, anon, authenticated;
+grant execute on function public.claim_owner(text) to service_role;

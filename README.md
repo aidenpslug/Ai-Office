@@ -23,13 +23,19 @@ Everyone who signs in gets their own private office. Agents run on Claude (Opus 
 3. **Settings.** In Vercel, open the project's **Settings > Environment Variables** and add:
    - `ANTHROPIC_API_KEY`: from console.anthropic.com, API Keys
    - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`: from Supabase, **Project Settings > API** (the service role key is the secret one; it only ever lives in Vercel)
-   - Optional `ALLOWED_EMAILS`: a comma-separated list of who may sign in. Leave it out to let anyone sign up.
-   - Optional `DAILY_CLAUDE_CALLS`: agent runs plus Jarvis commands per person per day (default 60).
+   - Optional `OWNER_EMAIL`: your email, to lock in who owns the site. Without it, the first person to sign in becomes the owner.
+   - Optional `DAILY_JARVIS_CALLS`: Jarvis commands per person per day (default 100).
 
    Then open **Deployments** and choose **Redeploy** so the settings take effect.
 4. **Sign-in links.** In Supabase, open **Authentication > URL Configuration** and set **Site URL** to your Vercel address, for example `https://ai-office.vercel.app`.
 
-Open your Vercel address, enter your email, and click the link that arrives.
+Open your Vercel address, enter your email, and click the link that arrives. **Sign in yourself first:** the first person to sign in becomes the owner.
+
+## Who can use it
+
+The site is invite-only. As the owner, open **Account > People** to add someone's email and set how many tickets they get per month (empty means unlimited). Each time an agent works on a ticket or a revision counts as one ticket. Anyone not on the list sees an "Invite only" screen. Removing someone blocks them but keeps their office data.
+
+If you update the site and `supabase/schema.sql` changed, paste it into the SQL Editor and run it again. It's safe to re-run.
 
 Supabase's built-in email sends only a few sign-in emails per hour. That's fine for a small group because people stay signed in. For more, connect your own email service under **Authentication > Emails** in Supabase.
 
@@ -39,4 +45,4 @@ In the office, open **Account**. It makes your private Jarvis key and shows the 
 
 ## Costs
 
-Agents use your Claude API key, so every ticket costs a little. The per-person daily allowance and `ALLOWED_EMAILS` are your guard rails. Supabase and Vercel are free at this size.
+Agents use your Claude API key, so every ticket costs a little. The People list and each person's monthly tickets are your guard rails. Supabase and Vercel are free at this size.

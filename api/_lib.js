@@ -8,10 +8,10 @@ export const config = {
   supabaseAnonKey: e.SUPABASE_ANON_KEY || e.NEXT_PUBLIC_SUPABASE_ANON_KEY || e.SUPABASE_PUBLISHABLE_KEY || e.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '',
   supabaseServiceKey: e.SUPABASE_SERVICE_ROLE_KEY || e.SUPABASE_SECRET_KEY || '',
   anthropicKey: e.ANTHROPIC_API_KEY || '',
-  // Optional: only these emails can use the office (comma separated). Empty means anyone who signs in.
-  allowedEmails: (e.ALLOWED_EMAILS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
-  // Claude calls each person can make per day (agent runs plus Jarvis commands).
-  dailyLimit: Math.max(1, parseInt(e.DAILY_CLAUDE_CALLS || '60', 10) || 60),
+  // Optional: this email is always the owner. Otherwise the first person to sign in becomes the owner.
+  ownerEmail: (e.OWNER_EMAIL || '').trim().toLowerCase(),
+  // Jarvis commands each person can give per day (agent tickets are limited per month in the People page).
+  dailyLimit: Math.max(1, parseInt(e.DAILY_JARVIS_CALLS || e.DAILY_CLAUDE_CALLS || '100', 10) || 100),
   // Local testing only: no Supabase, fake Claude.
   dev: e.OFFICE_DEV === '1',
 };
@@ -48,30 +48,72 @@ export function adminDb() {
   return admin;
 }
 
-// Who is calling: a signed-in person's session token from the office page.
+// Who is calling: a signed-in person's session token from the office page. Adds .member (their role and allowance).
 export async function userFromRequest(request) {
-  if (config.dev) return { id: '00000000-0000-4000-8000-000000000000', email: 'dev@localhost' };
+  if (config.dev) { const u = { id: '00000000-0000-4000-8000-000000000000', email: 'dev@localhost' }; u.member = await memberFor(u.email); return u; }
   const miss = missingSettings();
   if (miss.length) throw new OfficeError('not_configured', 'The site is missing settings: ' + miss.join(', '), 503);
   const token = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
   if (!token) throw new OfficeError('session_expired', 'Sign in again.', 401);
   const { data, error } = await adminDb().auth.getUser(token);
   if (error || !data?.user) throw new OfficeError('session_expired', 'Sign in again.', 401);
-  checkAllowed(data.user.email);
+  data.user.member = await memberFor(data.user.email);
   return data.user;
 }
 
-export function checkAllowed(email) {
-  if (config.allowedEmails.length && !config.allowedEmails.includes(String(email || '').toLowerCase()))
-    throw new OfficeError('not_allowed', "This office isn't open to your account. Ask the owner to add your email.", 403);
+const NOT_SET_UP = () => new OfficeError('not_configured', 'The database needs updating. Run supabase/schema.sql in Supabase again.', 503);
+export const thisMonth = () => new Date().toISOString().slice(0, 7);
+const devMem = () => (globalThis.__officeDev ||= { docs: new Map(), blobs: new Map(), version: 0 }, globalThis.__officeDev.members ||= new Map([['dev@localhost', { email: 'dev@localhost', role: 'owner', monthly_tickets: null }]]), globalThis.__officeDev);
+
+// The person's membership: { email, role: 'owner' | 'member', monthly_tickets (null = unlimited) }. Throws when they aren't invited.
+export async function memberFor(email) {
+  email = String(email || '').toLowerCase();
+  if (config.dev) {
+    const m = devMem().members.get(email);
+    if (!m) throw new OfficeError('not_allowed', 'This office is invite-only. Ask the owner to add your email.', 403);
+    return m;
+  }
+  const db = adminDb();
+  const { data, error } = await db.from('members').select('email,role,monthly_tickets').eq('email', email).maybeSingle();
+  if (error) throw NOT_SET_UP();
+  if (data && (data.role === 'owner' || email !== config.ownerEmail)) return data;
+  if (config.ownerEmail ? email === config.ownerEmail : true) {
+    const { data: isOwner, error: e2 } = await db.rpc('claim_owner', { p_email: email });
+    if (e2) throw NOT_SET_UP();
+    if (isOwner) return { email, role: 'owner', monthly_tickets: null };
+  }
+  if (data) return data;
+  throw new OfficeError('not_allowed', 'This office is invite-only. Ask the owner to add your email.', 403);
 }
 
-// Counts one Claude call against the person's daily allowance.
+// Counts one agent run against the person's monthly ticket allowance.
+export async function spendTicket(user) {
+  const limit = user.member?.role === 'owner' ? null : user.member?.monthly_tickets ?? null;
+  if (config.dev) {
+    const u = devMem().usage ||= new Map(), k = user.id + thisMonth(), n = (u.get(k) || 0) + 1;
+    if (limit !== null && n > limit) throw new OfficeError('ticket_limit', `You've used all ${limit} tickets for this month.`, 429);
+    u.set(k, n); return;
+  }
+  const { data, error } = await adminDb().rpc('spend_ticket', { p_user: user.id, p_limit: limit });
+  if (error) throw NOT_SET_UP();
+  if (data === -1) throw new OfficeError('ticket_limit', `You've used all ${limit} tickets for this month. Ask the owner for more.`, 429);
+}
+
+// Tickets used this month, by user id.
+export async function ticketsUsed(userIds) {
+  if (config.dev) { const u = devMem().usage || new Map(); return Object.fromEntries(userIds.map(id => [id, u.get(id + thisMonth()) || 0])); }
+  if (!userIds.length) return {};
+  const { data, error } = await adminDb().from('ticket_usage').select('user_id,tickets').eq('month', thisMonth()).in('user_id', userIds);
+  if (error) throw NOT_SET_UP();
+  return Object.fromEntries(data.map(r => [r.user_id, r.tickets]));
+}
+
+// Counts one Jarvis command against the person's daily allowance.
 export async function spendCall(userId) {
   if (config.dev) return;
   const { data, error } = await adminDb().rpc('bump_usage', { p_user: userId, p_limit: config.dailyLimit });
-  if (error) throw new OfficeError('not_configured', 'The database is not set up yet. Run supabase/schema.sql in Supabase.', 503);
-  if (data === -1) throw new OfficeError('daily_limit', `You've used today's ${config.dailyLimit} Claude calls. They reset at midnight (UTC).`, 429);
+  if (error) throw NOT_SET_UP();
+  if (data === -1) throw new OfficeError('daily_limit', `That's today's ${config.dailyLimit} Jarvis commands. They reset at midnight (UTC).`, 429);
 }
 
 let anthropic;
