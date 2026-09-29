@@ -671,7 +671,7 @@ update.ticket = box => {
   const st = box.querySelector('.pill.st'); st.textContent = statusText(t); st.className = 'pill st' + (t.status === 'working' ? ' live' : t.status === 'changes' ? ' warn' : '');
   const s = getS(t.assignee), running = !!(s && runs[s.id] && runs[s.id].ticketId === t.id);
   const dyn = box.querySelector('.dyn');
-  const sig = [t.status, t.doneHow, t.imageId, !!memImages[t.id], S.dl ? 1 : 0, running, t.assignee, (t.output || '').length, t.lastError, (t.feedback || []).length, S.sample ? 1 : 0, s && runs[s.id] ? 1 : 0, t.pr].join('|');
+  const sig = [t.status, t.kind, t.doneHow, t.imageId, !!memImages[t.id], S.dl ? 1 : 0, running, t.assignee, (t.output || '').length, t.lastError, (t.feedback || []).length, S.sample ? 1 : 0, s && runs[s.id] ? 1 : 0, t.pr].join('|');
   if (dyn.dataset.sig === sig) return;
   dyn.dataset.sig = sig; dyn.innerHTML = '';
   const row = document.createElement('div'); row.className = 'btnrow';
@@ -750,7 +750,7 @@ function finishBox(t) {
 function fileBase(t) { return (t.title || 'work').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase().slice(0, 60) || 'work'; }
 async function downloadWork(t) {
   if (!S.dl) { toast("Downloads aren't available in this view."); return; }
-  const lesson = t.kind === 'video' && parseLesson(t.output);
+  const lesson = isLesson(t) && parseLesson(t.output);
   const filename = fileBase(t) + (t.kind === 'design' || lesson ? '.html' : '.md');
   const data = lesson ? lessonHtml(t, lesson) : t.kind === 'design' ? extractHtml(t.output || '') : (t.output || '');
   try {
@@ -774,8 +774,10 @@ async function handOff(t, toId, note, kind, start) {
   if (start && S.sample && !runs[to.id]) startRun(nt.id);
   else if (start) toast(`${to.name} is busy. #${nt.num} is waiting in the queue.`);
 }
+// A video lesson is recognized by its content too, so it plays even if the ticket's type says otherwise.
+const isLesson = t => t.kind === 'video' || /^\s*(```(json)?\s*)?\{\s*"title"[\s\S]*"scenes"\s*:/.test(t.output || '');
 function renderOutput(t) {
-  if (t.kind === 'video') {
+  if (isLesson(t)) {
     const d = document.createElement('div'); d.className = 'lesson';
     const data = parseLesson(t.output);
     if (!data) { d.innerHTML = '<p class="err">This video lesson came back in a shape the player can\'t read. Request changes to try again.</p>'; return d; }
