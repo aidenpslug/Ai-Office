@@ -72,10 +72,10 @@ button.danger { color: var(--danger); border-color: var(--danger); background: n
 .notice { font-size: 12.5px; color: var(--warn); background: var(--warn-soft); border-radius: 8px; padding: 5px 10px; margin: 0; }
 .notice:empty { display: none; }
 
-.main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 12px; min-height: 0; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 12px; min-height: 0; grid-row: 3; }  /* stays in the stretchy row even when the notice is hidden */
 .left { position: relative; display: grid; grid-template-rows: minmax(0, 1fr) minmax(150px, 34%); gap: 12px; min-height: 0; min-width: 0; }
 .stage { position: relative; min-height: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-canvas { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; border-radius: 6px; cursor: pointer; }
+canvas { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; border-radius: 6px; cursor: pointer; flex: none; }
 .ceo { min-height: 0; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
 .ceo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
 .ceo-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; margin-bottom: 8px; }
@@ -164,7 +164,7 @@ textarea { resize: vertical; min-height: 60px; }
 .fbar { display: none; }
 body.focus .app { padding: 0; gap: 0; grid-template-rows: minmax(0, 1fr); }
 body.focus .top, body.focus .notice { display: none; }
-body.focus .main { grid-template-columns: minmax(0, 1fr); gap: 0; }
+body.focus .main { grid-template-columns: minmax(0, 1fr); gap: 0; grid-row: auto; }
 body.focus .left { grid-template-rows: minmax(0, 1fr); gap: 0; }
 body.focus .stage { border: 0; border-radius: 0; padding: 0; background: #262a33; }
 body.focus canvas { border-radius: 0; }
@@ -1313,6 +1313,23 @@ const W = 960, H = 600, CY = 240;
 const cv = $('office'), ctx = cv.getContext('2d');
 const dpr = Math.min(window.devicePixelRatio || 1, 2);
 cv.width = W * dpr; cv.height = H * dpr; ctx.scale(dpr, dpr);
+// Grow the floor to fill its area on big screens (it was capped at its drawn size), and redraw sharper to match.
+const NARROW = window.matchMedia('(max-width: 900px), (max-height: 520px)');
+function fitFloor() {
+  const box = $('view-floor');
+  if (NARROW.matches || !box) { cv.style.width = cv.style.height = ''; return; }
+  const cs = getComputedStyle(box);
+  const bw = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const bh = box.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  if (bw <= 0 || bh <= 0) return;
+  const k = Math.min(bw / W, bh / H);
+  cv.style.width = Math.floor(W * k) + 'px'; cv.style.height = Math.floor(H * k) + 'px';
+  const scale = Math.min(4, dpr * Math.max(1, k));
+  if (Math.abs(cv.width - Math.round(W * scale)) > 1) { cv.width = Math.round(W * scale); cv.height = Math.round(H * scale); ctx.setTransform(scale, 0, 0, scale, 0, 0); }
+}
+if (window.ResizeObserver) new ResizeObserver(fitFloor).observe($('view-floor')); else addEventListener('resize', fitFloor);
+NARROW.addEventListener?.('change', fitFloor);
+fitFloor();
 const desks = [];
 [100, 240, 380, 520].forEach(x => desks.push({ x, top: true, rect: [x - 45, 108, 90, 34], seat: { x, y: 168 } }));
 [100, 240, 380, 520].forEach(x => desks.push({ x, top: false, rect: [x - 45, 328, 90, 34], seat: { x, y: 310 } }));
