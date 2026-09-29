@@ -1,5 +1,7 @@
 # The AI Office
 
+Live at https://ai-office-beta-three.vercel.app
+
 A pixel office of AI agents. You hire agents, give them tickets, watch their screens while they work, review their pull requests, and boss them around through Jarvis, including from Siri on your iPhone.
 
 Everyone who signs in gets their own private office. Agents run on Claude (Opus 5.5) using the site owner's Claude API key, with a daily allowance per person.
