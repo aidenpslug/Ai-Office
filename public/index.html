@@ -1,0 +1,1392 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="AI Office">
+<meta name="description" content="A pixel office of AI agents you hire, give tickets to and review.">
+<title>The AI Office</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%231f7a74'/%3E%3Crect x='3' y='4' width='10' height='6' fill='%23b9f3e4'/%3E%3Crect x='6' y='11' width='4' height='2' fill='%23b9f3e4'/%3E%3C/svg%3E">
+<script src="/runtime.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one-screen app. Top bar; left = office (or CEO wall of screens) over a 4-column board; right = an edit panel for whatever is selected. Nothing on the page scrolls; panels scroll inside. */
+:root {
+  --bg: #e9ecf1;
+  --panel: #f8f9fb;
+  --ink: #1c2230;
+  --muted: #5d6677;
+  --line: #d3d8e1;
+  --accent: #1f7a74;
+  --accent-ink: #ffffff;
+  --accent-soft: #d5ece9;
+  --warn: #b5651d;
+  --warn-soft: #f6e6d6;
+  --danger: #b3261e;
+  --screen-bg: #0f1a1f;
+  --screen-ink: #b9f3e4;
+  --screen-dim: #5f8f86;
+  --font-display: "Pixelify Sans", "Courier New", monospace;
+  --font-body: "Atkinson Hyperlegible", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141821; --panel: #1c212c; --ink: #e6e9ef; --muted: #99a2b3; --line: #2d3442;
+    --accent: #4fc1b7; --accent-ink: #0f1a1f; --accent-soft: #1d3a3a; --warn: #e39a52; --warn-soft: #3a2a1c; --danger: #f08a80; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141821; --panel: #1c212c; --ink: #e6e9ef; --muted: #99a2b3; --line: #2d3442;
+  --accent: #4fc1b7; --accent-ink: #0f1a1f; --accent-soft: #1d3a3a; --warn: #e39a52; --warn-soft: #3a2a1c; --danger: #f08a80; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.4; overflow: hidden; }
+.app { height: 100%; display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 10px; padding-inline: 16px; padding-block: 10px; }
+.top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 24px; line-height: 1; margin: 0; letter-spacing: .5px; white-space: nowrap; }
+h2 { font-family: var(--font-display); font-weight: 500; font-size: 17px; margin: 0; letter-spacing: .03em; }
+h3 { margin: 0; font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.stats { display: flex; gap: 14px; font-variant-numeric: tabular-nums; }
+.stat { display: flex; align-items: baseline; gap: 5px; white-space: nowrap; }
+.stat b { font-family: var(--font-display); font-size: 18px; }
+.stat span { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.spacer { flex: 1; }
+.tabs { display: flex; gap: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 3px; }
+.tabs button { border: 0; background: none; }
+.tabs button[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; }
+button, select, input, textarea { font: inherit; font-size: 13.5px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; }
+button { cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+button.ghost { background: none; }
+button.small { font-size: 12.5px; padding: 3px 8px; }
+button.danger { color: var(--danger); border-color: var(--danger); background: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.notice { font-size: 12.5px; color: var(--warn); background: var(--warn-soft); border-radius: 8px; padding: 5px 10px; margin: 0; }
+.notice:empty { display: none; }
+
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 12px; min-height: 0; }
+.left { position: relative; display: grid; grid-template-rows: minmax(0, 1fr) minmax(150px, 34%); gap: 12px; min-height: 0; min-width: 0; }
+.stage { position: relative; min-height: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+canvas { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; border-radius: 6px; cursor: pointer; }
+.ceo { min-height: 0; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+.ceo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.ceo-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; margin-bottom: 8px; }
+.ceo-head p { margin: 0; color: var(--muted); font-size: 12.5px; }
+
+/* big preview layer over the left area */
+.preview { position: absolute; inset: 0; background: var(--panel); border-radius: 10px; display: flex; flex-direction: column; z-index: 3; }
+.preview-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.preview-b { flex: 1; min-height: 0; overflow: auto; padding: 10px; }
+.preview-b iframe { width: 100%; height: 100%; border: 0; background: #fff; border-radius: 6px; }
+
+/* board */
+.board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; min-height: 0; }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.col h3 { padding: 8px 10px 4px; display: flex; justify-content: space-between; }
+.col-list { overflow-y: auto; padding: 4px 8px 8px; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.empty { font-size: 12.5px; color: var(--muted); margin: 0; padding: 4px 2px; }
+.tk { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; cursor: pointer; text-align: left; }
+.tk.owned { background: color-mix(in srgb, var(--agent) 22%, var(--bg)); border-color: color-mix(in srgb, var(--agent) 60%, var(--line)); border-left: 5px solid var(--agent); }
+.tk:hover { border-color: var(--accent); }
+.tk.owned.sel, .tk.owned:hover { border-left-color: var(--agent); }
+.tk.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.tk-t { font-weight: 700; font-size: 13px; overflow-wrap: anywhere; }
+.tk-t small { color: var(--muted); font-weight: 400; margin-right: 4px; font-variant-numeric: tabular-nums; }
+.tk-meta { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--muted); }
+.tk-meta .grow { flex: 1; }
+.kind { font-size: 10.5px; padding: 1px 6px; border-radius: 4px; font-weight: 700; color: #3b2f10; }
+.kind.design { background: #f5b3cd; } .kind.code { background: #f4d76a; } .kind.writing { background: #a9d6f5; }
+.av { width: 26px; height: 26px; border-radius: 50%; flex: none; display: inline-grid; place-items: center; font-family: var(--font-display); color: #fff; font-size: 13px; }
+.av.xs { width: 16px; height: 16px; font-size: 9px; }
+.pill { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; padding: 2px 7px; border-radius: 999px; background: var(--line); color: var(--muted); white-space: nowrap; }
+.pill.live { background: var(--accent); color: var(--accent-ink); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+
+/* edit panel */
+.insp { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+.insp-h { display: flex; align-items: center; gap: 8px; }
+.insp-h .eyebrow { font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
+.insp-h .grow { flex: 1; }
+.saved { font-size: 12px; color: var(--accent); }
+.insp-empty { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.insp-empty p { margin: 0; color: var(--muted); }
+label { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; font-weight: 700; min-width: 0; }
+label span { font-weight: 400; color: var(--muted); }
+textarea { resize: vertical; min-height: 60px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.btnrow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.err { font-size: 12.5px; color: var(--warn); margin: 0; }
+.list { display: flex; flex-direction: column; gap: 4px; }
+.list button { text-align: left; display: flex; gap: 6px; align-items: center; background: var(--bg); }
+.list button .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sect { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
+.confirm { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 13px; }
+.pr-mini iframe { width: 100%; height: 190px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.md { overflow-wrap: anywhere; min-width: 0; }
+.pr-mini .md { max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--bg); }
+.md pre { background: var(--screen-bg); color: var(--screen-ink); padding: 8px; border-radius: 6px; overflow-x: auto; font-size: 12px; font-family: var(--font-mono); }
+.md code { font-family: var(--font-mono); font-size: .92em; }
+.md h2, .md h3, .md h4 { font-family: var(--font-body); font-weight: 700; margin: 12px 0 4px; font-size: 15px; letter-spacing: 0; text-transform: none; color: var(--ink); }
+.md p { margin: 0 0 8px; }
+.fb { font-size: 12.5px; color: var(--muted); margin: 0; padding-left: 18px; }
+
+/* screen-share card */
+.scr { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.scr.boxed { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+.scr-top { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.who { min-width: 0; flex: 1; }
+.who b { display: block; }
+.who small { color: var(--muted); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.monitor { background: #2a2f38; border-radius: 9px; padding: 6px; }
+.screen { background: var(--screen-bg); color: var(--screen-ink); font-family: var(--font-mono); font-size: 11px; line-height: 1.5; border-radius: 5px; padding: 7px 9px; height: 170px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; margin: 0; }
+.screen .dim { color: var(--screen-dim); }
+.screen .cur { display: inline-block; width: 7px; height: 12px; background: var(--screen-ink); vertical-align: -2px; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .screen .cur { animation: none; } }
+.say { display: flex; gap: 6px; }
+.say input { flex: 1; min-width: 0; }
+.scr-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.toast { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 7px 14px; border-radius: 8px; font-size: 13.5px; z-index: 20; max-width: calc(100% - 32px); }
+
+/* focus mode: only the moving office; everything else opens on demand */
+.fbar { display: none; }
+body.focus .app { padding: 0; gap: 0; grid-template-rows: minmax(0, 1fr); }
+body.focus .top, body.focus .notice { display: none; }
+body.focus .main { grid-template-columns: minmax(0, 1fr); gap: 0; }
+body.focus .left { grid-template-rows: minmax(0, 1fr); gap: 0; }
+body.focus .stage { border: 0; border-radius: 0; padding: 0; background: #262a33; }
+body.focus canvas { border-radius: 0; }
+body.focus .board { display: none; }
+body.focus.show-board .board { display: grid; position: absolute; left: 12px; right: 12px; bottom: 12px; height: 42%; z-index: 4; background: var(--bg); padding: 10px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+body.focus .ceo { position: absolute; inset: 60px 12px 12px; z-index: 4; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+body.focus .insp { display: none; }
+body.focus.show-insp .insp { display: flex; position: fixed; top: 60px; right: 12px; bottom: 12px; width: min(400px, calc(100% - 24px)); z-index: 6; box-shadow: 0 10px 40px rgba(0,0,0,.4); }
+body.focus .preview { z-index: 5; }
+@media (min-width: 901px) { body.focus.show-insp.show-board .board, body.focus.show-insp .ceo { right: 424px; } }
+body.focus .fbar { display: flex; position: absolute; top: 10px; left: 12px; right: 12px; z-index: 7; gap: 6px; flex-wrap: wrap; align-items: center; pointer-events: none; }
+.fbar > * { pointer-events: auto; }
+.fbar button { background: rgba(20,24,33,.78); color: #fff; border-color: rgba(255,255,255,.18); backdrop-filter: blur(4px); }
+.fbar button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.fbar .fstats { background: rgba(20,24,33,.78); color: #fff; border-radius: 6px; padding: 5px 10px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.fbar .grow { flex: 1; pointer-events: none; }
+
+/* Jarvis */
+.j-open { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 9; display: flex; align-items: center; gap: 8px; border-radius: 999px; padding: 8px 16px 8px 10px; background: #10232a; color: #bff4ea; border: 1px solid #2f6f6a; font-family: var(--font-display); font-size: 15px; box-shadow: 0 8px 24px rgba(0,0,0,.3); }
+.j-orb { width: 20px; height: 20px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #e9fffb, #4fe3cf 45%, #147a74 80%); box-shadow: 0 0 10px #4fe3cf; }
+.jarvis { position: fixed; right: 16px; bottom: calc(68px + env(safe-area-inset-bottom, 0px)); width: min(400px, calc(100% - 32px)); height: min(540px, calc(100% - 100px)); z-index: 9; background: #0f1b20; color: #dff7f2; border: 1px solid #2f6f6a; border-radius: 14px; display: flex; flex-direction: column; box-shadow: 0 16px 50px rgba(0,0,0,.45); }
+.j-h { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid #1f3d40; }
+.j-h h2 { color: #bff4ea; flex: 1; }
+.j-h label { flex-direction: row; align-items: center; gap: 5px; font-weight: 400; font-size: 12px; color: #9cc9c1; }
+.jarvis button { background: #173036; color: #dff7f2; border-color: #2f6f6a; }
+.jarvis button.primary { background: #4fe3cf; color: #0f1b20; border-color: #4fe3cf; }
+.jarvis button[aria-pressed="true"] { background: #e0705a; border-color: #e0705a; color: #fff; }
+.j-log { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.j-hint { margin: 0; font-size: 13px; color: #9cc9c1; line-height: 1.5; }
+.j-hint b { color: #dff7f2; font-weight: 400; }
+.j-msg { max-width: 88%; padding: 7px 10px; border-radius: 10px; font-size: 13.5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.j-msg.me { align-self: flex-end; background: #2f6f6a; color: #fff; }
+.j-msg.bot { align-self: flex-start; background: #173036; }
+.j-msg.thinking { color: #9cc9c1; font-style: italic; }
+.j-acts { margin-top: 4px; font-size: 11.5px; color: #8fe9d9; }
+.j-att { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-top: 1px solid #1f3d40; font-size: 12.5px; color: #9cc9c1; }
+.j-att img { height: 44px; border-radius: 4px; border: 1px solid #2f6f6a; }
+.j-form { display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid #1f3d40; align-items: center; }
+.j-form input[type=text] { flex: 1; min-width: 0; background: #0a1417; color: #eafffb; border-color: #2f6f6a; font-size: 15px; }
+.j-file { position: relative; overflow: hidden; }
+.j-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.shot { max-width: 100%; max-height: 160px; border-radius: 6px; border: 1px solid var(--line); align-self: flex-start; }
+
+/* narrow screens: fall back to a scrolling stack */
+@media (max-width: 900px), (max-height: 520px) {
+  body { overflow: auto; }
+  .app { height: auto; }
+  .main { grid-template-columns: minmax(0, 1fr); }
+  .left { grid-template-rows: auto auto; }
+  .stage { display: block; }
+  canvas { width: 100%; max-height: none; }
+  .ceo { max-height: 70vh; }
+  .board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .col-list { max-height: 260px; }
+  .insp { overflow: visible; }
+  .preview { position: fixed; inset: 8px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <h1>The AI Office</h1>
+    <div class="stats">
+      <div class="stat"><b id="st-open">0</b><span>Tickets</span></div>
+      <div class="stat"><b id="st-work">0</b><span>Working</span></div>
+      <div class="stat"><b id="st-pr">0</b><span>PRs</span></div>
+      <div class="stat"><b id="st-merged">0</b><span>Done</span></div>
+    </div>
+    <div class="spacer"></div>
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" id="tab-floor" aria-selected="true">Office floor</button>
+      <button type="button" role="tab" id="tab-ceo" aria-selected="false">CEO office</button>
+    </div>
+    <div class="actions">
+      <button type="button" id="btn-hire">Hire an agent</button>
+      <button type="button" class="primary" id="btn-ticket">New ticket</button>
+      <button type="button" id="btn-full" title="Show only the office">Full screen</button>
+    </div>
+  </div>
+  <p class="notice" id="notice"></p>
+
+  <div class="main">
+    <div class="left">
+      <div class="stage" id="view-floor">
+        <canvas id="office" width="960" height="600" aria-label="Top-down view of the office floor. Click an agent to open them."></canvas>
+      </div>
+      <div class="ceo" id="view-ceo" hidden>
+        <div class="ceo-head"><h2>CEO office</h2><p>Every agent's screen at once. Type a note to redirect someone mid-task.</p></div>
+        <div class="ceo-grid" id="ceo-grid"></div>
+      </div>
+      <section class="board" id="board">
+        <div class="col" data-col="todo"><h3>Tickets <span></span></h3><div class="col-list"></div></div>
+        <div class="col" data-col="working"><h3>In progress <span></span></h3><div class="col-list"></div></div>
+        <div class="col" data-col="review"><h3>Pull requests <span></span></h3><div class="col-list"></div></div>
+        <div class="col" data-col="merged"><h3>Done <span></span></h3><div class="col-list"></div></div>
+      </section>
+      <div class="preview" id="preview" hidden></div>
+      <div class="fbar" id="fbar">
+        <button type="button" id="f-board" aria-pressed="false">Tickets and PRs</button>
+        <button type="button" id="f-ceo" aria-pressed="false">CEO office</button>
+        <button type="button" id="f-panel" aria-pressed="false">Details</button>
+        <button type="button" id="f-ticket">New ticket</button>
+        <button type="button" id="f-hire">Hire</button>
+        <span class="fstats" id="f-stats"></span>
+        <span class="grow"></span>
+        <button type="button" id="f-exit">Exit full screen</button>
+      </div>
+    </div>
+    <aside class="insp" id="insp" aria-live="polite"></aside>
+  </div>
+</div>
+<datalist id="roles"><option value="Frontend engineer"><option value="Backend engineer"><option value="Product designer"><option value="Copywriter"><option value="Researcher"><option value="QA engineer"></datalist>
+<button type="button" class="j-open" id="j-open" aria-expanded="false" aria-controls="jarvis"><span class="j-orb"></span>Jarvis</button>
+<section class="jarvis" id="jarvis" hidden aria-label="Jarvis assistant">
+  <div class="j-h"><span class="j-orb"></span><h2>Jarvis</h2><label><input type="checkbox" id="j-speak"> Speak replies</label><button type="button" class="small" id="j-close">Close</button></div>
+  <div class="j-log" id="j-log" aria-live="polite"></div>
+  <div class="j-att" id="j-att" hidden><img alt="Attached screenshot"><span>Screenshot attached</span><button type="button" class="small" id="j-att-x">Remove</button></div>
+  <form class="j-form" id="j-form">
+    <span class="j-file"><button type="button" class="small" tabindex="-1">Screenshot</button><input type="file" id="j-file" accept="image/*" aria-label="Attach a screenshot"></span>
+    <input type="text" id="j-in" maxlength="600" autocomplete="off" placeholder="Tell Jarvis… or tap your keyboard's mic" aria-label="Command for Jarvis">
+    <button type="button" class="small" id="j-mic" aria-pressed="false">Talk</button>
+    <button type="submit" class="primary small" id="j-send">Send</button>
+  </form>
+</section>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+// ================= state =================
+const S = { staff: [], tickets: [], db: null, sample: null, dl: null, assets: null, mode: 'loading' };
+const memImages = {};  // ticketId -> screenshot Blob attached in this view
+const runs = {};          // staffId -> { ticketId, ctl, text, phase, redirect }
+const actors = {};        // staffId -> canvas figure
+let selectedId = null, view = 'floor', bootDone = false;
+const PALETTE = ['#3fa37a', '#e06fa6', '#5a8de0', '#e0b43f', '#e0705a', '#8a6bd1', '#2fa7b8', '#b0793f'];
+const LOOKS = [['#3b2418', '#e9b995'], ['#1d1d24', '#c68a5e'], ['#8a4b22', '#f0c9a4'], ['#d9c27a', '#e6b48f'], ['#16161a', '#a8714a'], ['#5a3a8a', '#f2cfae'], ['#6b2f1a', '#d9a077'], ['#2b2b2b', '#8d5a3b']];
+const FORMATS = {
+  design: 'Deliver your work as ONE complete, self-contained HTML document with inline CSS only: no scripts, no external images, fonts or links. If the ticket asks for variations, show them side by side on the page, each labeled. Reply with only the HTML.',
+  code: 'Deliver working code as a pull request. Start with a short "Summary" paragraph, then each file as a fenced code block preceded by its file path on its own line. Keep it focused, under about 250 lines total.',
+  writing: 'Deliver the finished text in Markdown. No preamble.',
+};
+const KIND_LABEL = { design: 'Design', code: 'Code', writing: 'Writing' };
+const HIDE_CODES = ['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed', 'not_configured', 'not_allowed'];
+const ERR = {
+  rate_limited: 'Hit a usage limit. Try again in a bit.', session_expired: 'Your sign-in expired. Reload the page, then retry.',
+  refused: 'Claude declined this ticket. Try rewording it.', empty_completion: 'The agent came back empty. Try simplifying the ticket.',
+  prompt_too_large: 'The ticket plus earlier work is too long. Trim the details.', not_granted: 'Claude access was declined for this page.',
+  sampling_disabled: "Claude isn't available for this account.",
+  daily_limit: "You've used today's Claude allowance. It resets at midnight (UTC).",
+  bad_api_key: "The site's Claude API key isn't working. Check it in Vercel.", not_configured: "The site isn't fully set up yet.",
+  not_allowed: "Your account isn't allowed to use this office.", network: 'Lost the connection mid-task. Try again.',
+};
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const uid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const getS = id => S.staff.find(s => s.id === id);
+const getT = id => S.tickets.find(t => t.id === id);
+const staffSorted = () => S.staff.slice().sort((a, b) => (a.hiredAt || 0) - (b.hiredAt || 0));
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, 3200); }
+
+// ================= storage =================
+const writeQ = {};
+function upsert(list, obj) { const i = list.findIndex(x => x.id === obj.id); if (i >= 0) list[i] = obj; else list.push(obj); }
+function persist(coll, obj) {
+  if (!S.db) return Promise.resolve();
+  const key = coll + '/' + obj.id;
+  const body = { ...obj }; delete body.id;
+  writeQ[key] = (writeQ[key] || Promise.resolve()).then(() => S.db.doc(key).set(body)).catch(e => {
+    toast(e && e.code === 'quota_exceeded' ? 'The office is out of storage. Delete some done tickets.' : "Couldn't save that change. Check your access to this page.");
+  });
+  return writeQ[key];
+}
+function putStaff(s) { upsert(S.staff, s); syncActors(); renderAll(); return persist('staff', s); }
+function putTicket(t) { upsert(S.tickets, t); renderAll(); return persist('tickets', t); }
+function patchTicket(id, patch) { const t = getT(id); if (!t) return Promise.resolve(); return putTicket({ ...t, ...patch, updatedAt: Date.now() }); }
+function removeTicket(id) {
+  S.tickets = S.tickets.filter(t => t.id !== id); renderAll();
+  if (S.db) S.db.doc('tickets/' + id).delete().catch(() => toast("Couldn't delete that ticket."));
+}
+
+// ================= agents at work =================
+function buildPrompt(t, s, compact, hasImg) {
+  const parts = [`You are ${s.name}, the ${s.role} at "The AI Office", a small team of AI agents managed by a human CEO. You are working on one ticket.`];
+  if (s.instructions) parts.push(`Your standing instructions from the CEO:\n${s.instructions}`);
+  parts.push(`Ticket #${t.num}: ${t.title}` + (t.detail ? `\n\nDetails:\n${t.detail}` : ''));
+  const src = t.handoffFrom && getT(t.handoffFrom);
+  if (src && src.output) { const by = getS(src.assignee); parts.push(`This ticket was handed to you by ${by ? by.name + ', the ' + by.role : 'a teammate'}, who finished ticket #${src.num} "${src.title}". Build on their work:\n\n${src.output.slice(0, 40000)}`); }
+  if (hasImg) parts.push('The CEO attached a screenshot to this ticket (the image you can see). Study it closely: it shows what they are looking at.');
+  if (t.notes?.length) parts.push('Notes the CEO gave you while you worked. Follow them:\n- ' + t.notes.join('\n- '));
+  parts.push(FORMATS[t.kind] || FORMATS.writing);
+  const first = parts.join('\n\n');
+  if (!t.feedback?.length) return first;
+  // Revision: a real back-and-forth. The agent's last PR is its own earlier turn, the CEO's review is the new one.
+  const ask = 'The CEO reviewed your PR #' + t.pr + ' and requested changes. Address all of it:\n- ' + t.feedback.join('\n- ') +
+    '\n\nSend the complete revised deliverable, not just the changed parts. ' + (FORMATS[t.kind] || FORMATS.writing);
+  if (!t.output || compact) return first + '\n\n' + ask.replace('your PR #' + t.pr, 'your earlier attempt');
+  return [{ role: 'user', content: first }, { role: 'assistant', content: t.output.slice(0, 40000) }, { role: 'user', content: ask }];
+}
+function nextNum(field) { return S.tickets.reduce((m, t) => Math.max(m, t[field] || 0), 0) + 1; }
+
+async function startRun(ticketId) {
+  const t0 = getT(ticketId); const s = t0 && getS(t0.assignee);
+  if (!S.sample || !s || runs[s.id]) return;
+  const run = runs[s.id] = { ticketId, ctl: new AbortController(), text: '', phase: 'thinking', redirect: false };
+  await patchTicket(ticketId, { status: 'working', lastError: null, lastErrorDetail: null, startedAt: Date.now() });
+  selectedId = selectedId || s.id;
+  paintScreens(); renderBoard();
+  const t = getT(ticketId);
+  run.notes = (t.notes || []).length;
+  let images = null;
+  if (memImages[t.id] || t.imageId) {
+    try {
+      const lim = await S.sample.limits();
+      if (lim && lim.images) images = memImages[t.id] || await window.officeBlob(t.imageId);
+    } catch { images = null; }
+  }
+  const ask = compact => S.sample(buildPrompt(t, s, compact, !!images), {
+    signal: run.ctl.signal, cache: false, ...(images ? { images } : {}),
+    onText: ({ text }) => { run.text = text; run.phase = 'writing'; paintScreens(); },
+  });
+  try {
+    let res;
+    try { res = await ask(false); }
+    catch (e) {
+      // A revision that fails before writing anything gets one more try without the earlier PR attached.
+      if (!t.feedback?.length || !e || e.text || !['upstream_error', 'invalid_request', 'transform_error', undefined].includes(e.code)) throw e;
+      console.warn('Revision failed, retrying without the earlier PR', e);
+      run.text = ''; run.phase = 'thinking'; paintScreens();
+      res = await ask(true);
+    }
+    delete runs[s.id];
+    const pr = getT(ticketId).pr || nextNum('pr');
+    await patchTicket(ticketId, { status: 'review', output: res.text.slice(0, 200000), truncated: !!res.truncated, pr, notes: [], finishedAt: Date.now() });
+    toast(`${s.name} opened PR #${pr}: ${t.title}`);
+    handIn(s.id, pr);
+  } catch (e) {
+    delete runs[s.id];
+    if (e && e.code === 'cancelled') {
+      if (run.redirect) { paintScreens(); return startRun(ticketId); }
+      await patchTicket(ticketId, { status: 'todo' });
+    } else {
+      const code = e && e.code;
+      console.error('Agent run failed', e);
+      if (HIDE_CODES.includes(code)) { S.sample = null; showNotice(); }
+      await patchTicket(ticketId, { status: 'todo', lastError: (ERR[code] || 'Something went wrong mid-task. Try again.') + ` (${code || 'no code'})`, lastErrorDetail: String((e && (e.message || e)) || '').slice(0, 300) });
+    }
+  }
+  paintScreens(); renderBoard();
+}
+// Jarvis on the phone (Siri) writes straight to the office records; the open page acts on it here.
+const pageOpenedAt = Date.now(), seenCalls = {};
+function remoteChanges() {
+  if (!bootDone && S.mode !== 'db') return;
+  S.staff.forEach(s => {
+    if (s.calledAt && s.calledAt > Math.max(seenCalls[s.id] || 0, pageOpenedAt - 120000)) { seenCalls[s.id] = s.calledAt; callToOffice(s.id); }
+  });
+  Object.entries(runs).forEach(([sid, r]) => {
+    const t = getT(r.ticketId);
+    if (t && !r.redirect && (t.notes || []).length > r.notes) { r.redirect = true; r.ctl.abort(); toast(`${getS(sid)?.name || 'An agent'} got a new note from Jarvis`); }
+  });
+  if (!S.sample) return;
+  S.tickets.filter(t => t.autoStart && (t.status === 'todo' || t.status === 'changes')).sort((a, b) => a.num - b.num).forEach(t => {
+    const s = getS(t.assignee);
+    if (!s || runs[s.id]) return;
+    patchTicket(t.id, { autoStart: false }).then(() => startRun(t.id));
+  });
+}
+function stopRun(staffId) { const r = runs[staffId]; if (r) r.ctl.abort(); }
+async function redirectRun(staffId, note) {
+  const r = runs[staffId]; if (!r || !note) return;
+  const t = getT(r.ticketId);
+  await patchTicket(r.ticketId, { notes: [...(t.notes || []), note] });
+  r.notes = (t.notes || []).length + 1;
+  r.redirect = true; r.ctl.abort();
+  toast(`Told ${getS(staffId).name}: "${note}"`);
+}
+
+// ================= PR review =================
+function extractHtml(text) { const m = text.match(/```(?:html)?\s*\n([\s\S]*?)(```|$)/i); return (m ? m[1] : text).trim(); }
+function inline(s) { return esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>'); }
+function md(src) {
+  const out = [], lines = src.split('\n'); let i = 0, list = false, para = [];
+  const endPara = () => { if (para.length) { out.push('<p>' + inline(para.join(' ')) + '</p>'); para = []; } };
+  const endList = () => { if (list) { out.push('</ul>'); list = false; } };
+  while (i < lines.length) {
+    const l = lines[i];
+    if (/^\s*```/.test(l)) { endPara(); endList(); const buf = []; i++; while (i < lines.length && !/^\s*```/.test(lines[i])) buf.push(lines[i++]); i++; out.push('<pre><code>' + esc(buf.join('\n')) + '</code></pre>'); continue; }
+    const h = l.match(/^(#{1,4})\s+(.*)/);
+    if (h) { endPara(); endList(); const n = Math.min(4, h[1].length + 1); out.push(`<h${n}>${inline(h[2])}</h${n}>`); i++; continue; }
+    const li = l.match(/^\s*(?:[-*]|\d+\.)\s+(.*)/);
+    if (li) { endPara(); if (!list) { out.push('<ul>'); list = true; } out.push('<li>' + inline(li[1]) + '</li>'); i++; continue; }
+    if (!l.trim()) { endPara(); endList(); i++; continue; }
+    endList(); para.push(l); i++;
+  }
+  endPara(); endList(); return out.join('');
+}
+// ================= screens (live monitors) =================
+const liveCards = new Set();
+function screenCard(s, where) {
+  const el = document.createElement('div');
+  el.className = 'scr' + (where === 'ceo' ? ' boxed' : '');
+  el.dataset.id = s.id; el.dataset.where = where;
+  el.innerHTML = `
+    <div class="scr-top" title="Open ${esc(s.name)}"><span class="av" style="background:${s.color}"></span>
+      <div class="who"><b></b><small></small></div><span class="pill"></span></div>
+    <div class="monitor"><pre class="screen" aria-live="off"></pre></div>
+    <div class="scr-btns"></div>
+    <form class="say"><input type="text" maxlength="300" aria-label="Note for ${esc(s.name)}"><button type="submit" class="small">Redirect</button></form>`;
+  if (where === 'insp') el.querySelector('.scr-top').hidden = true;
+  el.querySelector('.scr-top').onclick = () => select('agent', s.id);
+  el.querySelector('.say').addEventListener('submit', e => {
+    e.preventDefault(); const inp = e.target.querySelector('input');
+    const note = inp.value.trim(); if (!note) return;
+    redirectRun(s.id, note); inp.value = '';
+  });
+  liveCards.add(el);
+  return el;
+}
+function updateCard(el) {
+  const s = getS(el.dataset.id); if (!s) return;
+  const run = runs[s.id], t = run ? getT(run.ticketId) : null;
+  el.querySelector('.who b').textContent = s.name; el.querySelector('.av').textContent = s.name[0];
+  el.querySelector('.av').style.background = s.color;
+  el.querySelector('.say input').placeholder = `Tell ${s.name} something…`;
+  el.querySelector('.who small').textContent = t ? `#${t.num} ${t.title}` : s.role;
+  const pill = el.querySelector('.pill'), scr = el.querySelector('.screen'), btns = el.querySelector('.scr-btns');
+  const queued = S.tickets.filter(x => x.assignee === s.id && (x.status === 'todo' || x.status === 'changes')).sort((a, b) => a.num - b.num);
+  const stale = S.tickets.find(x => x.assignee === s.id && x.status === 'working' && !run);
+  if (run) {
+    pill.textContent = run.phase === 'thinking' ? 'Thinking' : 'Live'; pill.className = 'pill live';
+    const head = `<span class="dim">${esc(s.name.toLowerCase())}@office ~ ticket #${t ? t.num : '?'}</span>\n`;
+    const body = run.text ? esc(run.text.slice(-4000)) : '<span class="dim">Reading the ticket and planning…</span>\n';
+    const atBottom = scr.scrollHeight - scr.scrollTop - scr.clientHeight < 30;
+    scr.innerHTML = head + body + '<span class="cur"></span>';
+    if (atBottom) scr.scrollTop = scr.scrollHeight;
+  } else {
+    pill.textContent = stale ? 'Interrupted' : 'Idle'; pill.className = 'pill' + (stale ? ' warn' : '');
+    const last = S.tickets.filter(x => x.assignee === s.id && x.output).sort((a, b) => (b.finishedAt || 0) - (a.finishedAt || 0))[0];
+    const html = `<span class="dim">${esc(s.name.toLowerCase())}@office ~ idle</span>\n\n` +
+      (queued.length ? `${queued.length} ticket${queued.length > 1 ? 's' : ''} waiting. Press Start to put ${esc(s.name)} to work.` : 'No tickets waiting. Give me something to do.') +
+      (last ? `\n\n<span class="dim">last PR: #${last.pr} ${esc(last.title)}</span>` : '') + '\n<span class="cur"></span>';
+    if (scr.dataset.idle !== html) { scr.dataset.idle = html; scr.innerHTML = html; }
+  }
+  if (!run) delete scr.dataset.run; else delete scr.dataset.idle;
+  el.querySelector('.say button').disabled = !run;
+  el.querySelector('.say input').disabled = !run;
+  const want = [s.name, run ? 'stop' : stale ? 'resume:' + stale.id : queued[0] ? 'start:' + queued[0].id : 'none', S.sample ? 1 : 0].join('|');
+  if (btns.dataset.want !== want) {
+    btns.dataset.want = want; btns.innerHTML = '';
+    const add = (label, fn, cls, dis) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'small ' + (cls || ''); b.textContent = label; b.disabled = !!dis; b.onclick = fn; btns.append(b); };
+    if (run) add('Stop', () => stopRun(s.id));
+    else if (stale) add(`Resume #${stale.num}`, () => startRun(stale.id), 'primary', !S.sample);
+    else if (queued[0]) add(`Start #${queued[0].num}`, () => startRun(queued[0].id), 'primary', !S.sample);
+    add('New ticket for ' + s.name, () => select('newticket', s.id), 'ghost');
+    if (el.dataset.where !== 'insp') add('Edit', () => select('agent', s.id), 'ghost');
+  }
+}
+function syncCeo() {
+  const grid = $('ceo-grid'), ids = staffSorted().map(s => s.id);
+  if (grid.dataset.ids !== ids.join()) {
+    grid.dataset.ids = ids.join();
+    grid.querySelectorAll('.scr').forEach(c => liveCards.delete(c));
+    grid.innerHTML = '';
+    ids.forEach(id => grid.append(screenCard(getS(id), 'ceo')));
+    if (!ids.length) grid.innerHTML = '<p class="empty">No agents on staff. Hire one to see their screen here.</p>';
+  }
+}
+function paintScreens() {
+  for (const c of liveCards) {
+    if (!c.isConnected) { liveCards.delete(c); continue; }
+    if (c.dataset.where === 'ceo' && view !== 'ceo') continue;
+    updateCard(c);
+  }
+  $('st-work').textContent = Object.keys(runs).length;
+}
+
+// ================= board =================
+function colOf(t) { return t.status === 'changes' ? 'todo' : t.status; }
+function renderBoard() {
+  const cols = { todo: [], working: [], review: [], merged: [] };
+  S.tickets.forEach(t => (cols[colOf(t)] || cols.todo).push(t));
+  cols.merged.sort((a, b) => (b.mergedAt || 0) - (a.mergedAt || 0));
+  ['todo', 'working', 'review'].forEach(k => cols[k].sort((a, b) => a.num - b.num));
+  document.querySelectorAll('#board .col').forEach(col => {
+    const k = col.dataset.col, list = cols[k], box = col.querySelector('.col-list');
+    col.querySelector('h3 span').textContent = list.length;
+    box.innerHTML = '';
+    if (!list.length) box.innerHTML = `<p class="empty">${{ todo: 'No open tickets. Press New ticket to add one.', working: 'Nobody is working right now.', review: 'No pull requests waiting on you.', merged: 'Finished work shows up here.' }[k]}</p>`;
+    list.forEach(t => box.append(ticketEl(t)));
+  });
+  $('st-open').textContent = cols.todo.length;
+  $('st-pr').textContent = cols.review.length;
+  $('st-merged').textContent = cols.merged.length;
+}
+function ticketEl(t) {
+  const s = getS(t.assignee), el = document.createElement('div');
+  el.className = 'tk' + (insp.mode === 'ticket' && insp.id === t.id ? ' sel' : '');
+  el.tabIndex = 0; el.setAttribute('role', 'button');
+  if (s) { el.style.setProperty('--agent', s.color); el.classList.add('owned'); }
+  const tag = t.pr && (t.status === 'review' || t.status === 'merged') ? 'PR #' + t.pr : '#' + t.num;
+  const state = t.status === 'changes' ? '<span class="pill warn">Changes</span>' : t.status === 'working' && !(s && runs[s.id]) ? '<span class="pill warn">Interrupted</span>' : t.status === 'working' ? '<span class="pill live">Live</span>' : t.lastError ? '<span class="pill warn">Failed</span>' : '';
+  el.innerHTML = `<div class="tk-t"><small>${tag}</small>${esc(t.title)}</div>
+    <div class="tk-meta"><span class="kind ${t.kind}">${KIND_LABEL[t.kind] || 'Task'}</span>${s ? `<span class="av xs" style="background:${s.color}">${esc(s.name[0])}</span>${esc(s.name)}` : 'Unassigned'}<span class="grow"></span>${state}</div>`;
+  el.onclick = () => select('ticket', t.id);
+  el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select('ticket', t.id); } };
+  return el;
+}
+
+// ================= edit panel =================
+let insp = { mode: 'agent', id: null }, inspKey = '';
+const narrow = () => matchMedia('(max-width: 900px), (max-height: 520px)').matches;
+function select(mode, id) {
+  insp = { mode, id };
+  if (mode === 'agent') selectedId = id;
+  closePreview();
+  if (inFocus()) togglePanel(true);
+  renderInspector(); renderBoard();
+  if (narrow()) $('insp').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function syncField(el, v) { if (document.activeElement !== el && el.value !== (v ?? '')) el.value = v ?? ''; }
+function savedFlash() { const n = $('insp').querySelector('.saved'); if (!n) return; n.textContent = 'Saved'; clearTimeout(savedFlash.h); savedFlash.h = setTimeout(() => n.textContent = '', 1500); }
+const saveT = {};
+function autosave(el, kind, id, field) {
+  const key = kind + id + field;
+  const go = () => {
+    clearTimeout(saveT[key]);
+    const cur = kind === 'staff' ? getS(id) : getT(id); if (!cur) return;
+    const val = field === 'assignee' ? (el.value || null) : el.value.trim();
+    if (['name', 'role', 'title'].includes(field) && !val) return;
+    if ((cur[field] ?? (field === 'assignee' ? null : '')) === val) return;
+    if (kind === 'staff') putStaff({ ...cur, [field]: val }); else patchTicket(id, { [field]: val });
+    savedFlash();
+  };
+  el.addEventListener('input', () => { clearTimeout(saveT[key]); saveT[key] = setTimeout(go, 700); });
+  el.addEventListener('change', go);
+  el.addEventListener('blur', go);
+}
+function twoStep(box, label, question, yes, fn) {
+  const reset = () => { box.innerHTML = ''; const b = document.createElement('button'); b.type = 'button'; b.className = 'small danger'; b.textContent = label; b.onclick = ask; box.append(b); };
+  const ask = () => {
+    box.innerHTML = `<div class="confirm"><span>${esc(question)}</span></div>`;
+    const c = box.firstChild, y = document.createElement('button'), n = document.createElement('button');
+    y.type = n.type = 'button'; y.className = 'small danger'; y.textContent = yes; n.className = 'small'; n.textContent = 'Cancel';
+    y.onclick = fn; n.onclick = reset; c.append(y, n);
+  };
+  reset();
+}
+function kindOptions() { return Object.entries(KIND_LABEL).map(([k, v]) => `<option value="${k}">${v}${k === 'design' ? ' (shows as a page)' : ''}</option>`).join(''); }
+function staffOptions() { return '<option value="">Unassigned</option>' + staffSorted().map(x => `<option value="${x.id}">${esc(x.name)}, ${esc(x.role)}</option>`).join(''); }
+function statusText(t) { return { todo: 'Open', changes: 'Changes requested', working: 'In progress', review: 'PR waiting on you', merged: 'Done' }[t.status] || t.status; }
+
+const build = {}, update = {};
+build.agent = box => {
+  const s = getS(insp.id);
+  if (!s) {
+    box.innerHTML = '<div class="insp-empty"><h2>No agents yet</h2><p>Hire your first agent to get started. Each agent is a Claude with its own name, role and instructions.</p><button type="button" class="primary">Hire an agent</button></div>';
+    box.querySelector('button').onclick = () => select('hire'); return;
+  }
+  box.innerHTML = `
+    <div class="insp-h"><span class="av"></span><span class="eyebrow">Agent</span><span class="grow"></span><span class="saved"></span></div>
+    <div class="row2"><label>Name<input data-f="name" maxlength="16"></label><label>Role<input data-f="role" maxlength="28" list="roles"></label></div>
+    <label>Standing instructions <span>Sent with every ticket.</span><textarea data-f="instructions" rows="3" maxlength="1200"></textarea></label>
+    <div class="slot"></div>
+    <div class="sect"><h3>Tickets</h3><div class="list"></div></div>
+    <div class="sect danger-zone"></div>`;
+  box.querySelectorAll('[data-f]').forEach(el => autosave(el, 'staff', s.id, el.dataset.f));
+  box.querySelector('.slot').append(screenCard(s, 'insp'));
+  twoStep(box.querySelector('.danger-zone'), `Let ${s.name} go`, `Remove ${s.name} from the office? Their tickets stay, unassigned.`, 'Yes, remove', () => fireAgent(s.id));
+};
+update.agent = box => {
+  const s = getS(insp.id); if (!s) return;
+  box.querySelectorAll('[data-f]').forEach(el => syncField(el, s[el.dataset.f]));
+  const av = box.querySelector('.insp-h .av'); av.style.background = s.color; av.textContent = s.name[0];
+  const mine = S.tickets.filter(t => t.assignee === s.id).sort((a, b) => b.num - a.num);
+  const list = box.querySelector('.list');
+  const sig = mine.map(t => t.id + t.status + t.title).join();
+  if (list.dataset.sig !== sig) {
+    list.dataset.sig = sig; list.innerHTML = mine.length ? '' : '<p class="empty">No tickets yet.</p>';
+    mine.forEach(t => { const b = document.createElement('button'); b.type = 'button'; b.className = 'small'; b.innerHTML = `<span class="kind ${t.kind}">${KIND_LABEL[t.kind]}</span><span class="grow">#${t.num} ${esc(t.title)}</span><span class="pill">${statusText(t)}</span>`; b.onclick = () => select('ticket', t.id); list.append(b); });
+  }
+};
+build.ticket = box => {
+  const t = getT(insp.id);
+  box.innerHTML = `
+    <div class="insp-h"><span class="eyebrow">Ticket #${t.num}</span><span class="pill st"></span><span class="grow"></span><span class="saved"></span><button type="button" class="ghost small x">Close</button></div>
+    <label>Title<input data-f="title" maxlength="70"></label>
+    <label>Details<textarea data-f="detail" rows="3" maxlength="4000" placeholder="Context, constraints, what done looks like."></textarea></label>
+    <div class="row2"><label>Type<select data-f="kind">${kindOptions()}</select></label><label>Assigned to<select data-f="assignee"></select></label></div>
+    <div class="dyn"></div>
+    <div class="sect danger-zone"></div>`;
+  box.querySelector('.x').onclick = hidePanel;
+  box.querySelectorAll('[data-f]').forEach(el => autosave(el, 'ticket', t.id, el.dataset.f));
+  twoStep(box.querySelector('.danger-zone'), 'Delete ticket', 'Delete this ticket and its PR for good?', 'Yes, delete', () => { const s = getS(t.assignee); if (s && runs[s.id] && runs[s.id].ticketId === t.id) stopRun(s.id); removeTicket(t.id); select('agent', selectedId); });
+};
+update.ticket = box => {
+  const t = getT(insp.id); if (!t) return;
+  const who = box.querySelector('[data-f="assignee"]');
+  const opts = staffOptions();
+  if (who.dataset.opts !== opts && document.activeElement !== who) { who.dataset.opts = opts; who.innerHTML = opts; }
+  box.querySelectorAll('[data-f]').forEach(el => syncField(el, t[el.dataset.f] ?? ''));
+  const st = box.querySelector('.pill.st'); st.textContent = statusText(t); st.className = 'pill st' + (t.status === 'working' ? ' live' : t.status === 'changes' ? ' warn' : '');
+  const s = getS(t.assignee), running = !!(s && runs[s.id] && runs[s.id].ticketId === t.id);
+  const dyn = box.querySelector('.dyn');
+  const sig = [t.status, t.doneHow, t.imageId, !!memImages[t.id], S.dl ? 1 : 0, running, t.assignee, (t.output || '').length, t.lastError, (t.feedback || []).length, S.sample ? 1 : 0, s && runs[s.id] ? 1 : 0, t.pr].join('|');
+  if (dyn.dataset.sig === sig) return;
+  dyn.dataset.sig = sig; dyn.innerHTML = '';
+  const row = document.createElement('div'); row.className = 'btnrow';
+  const btn = (label, fn, cls, dis) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls || ''; b.textContent = label; b.disabled = !!dis; b.onclick = fn; row.append(b); };
+  if (t.lastError) dyn.insertAdjacentHTML('beforeend', `<p class="err">${esc(t.lastError)}</p>`);
+  const src = t.handoffFrom && getT(t.handoffFrom);
+  if (src) { const b = document.createElement('button'); b.type = 'button'; b.className = 'small ghost'; b.textContent = `Builds on #${src.num} ${src.title}`; b.onclick = () => select('ticket', src.id); dyn.append(b); }
+  if (t.imageId || memImages[t.id]) {
+    const img = document.createElement('img'); img.className = 'shot'; img.alt = 'Screenshot attached to this ticket';
+    img.onerror = () => img.remove();
+    if (memImages[t.id]) img.src = URL.createObjectURL(memImages[t.id]);
+    else window.officeBlob(t.imageId).then(b => { img.src = URL.createObjectURL(b); }).catch(() => img.remove());
+    dyn.append(img);
+  }
+  if (t.status === 'merged' && t.doneHow) dyn.insertAdjacentHTML('beforeend', `<p class="empty">${esc(t.doneHow)}</p>`);
+  if (t.status === 'todo' || t.status === 'changes') {
+    const busy = s && runs[s.id];
+    btn(!s ? 'Assign someone to start' : busy ? `${s.name} is busy` : t.status === 'changes' ? 'Start revision' : 'Start', () => startRun(t.id), 'primary', !S.sample || !s || busy);
+  } else if (t.status === 'working' && running) {
+    btn('Stop', () => stopRun(s.id));
+  } else if (t.status === 'working') {
+    btn('Resume', () => startRun(t.id), 'primary', !S.sample || !s);
+  } else if (t.status === 'merged') {
+    btn('Reopen', () => patchTicket(t.id, { status: 'changes', mergedAt: null }), 'ghost');
+  }
+  if (row.children.length) dyn.append(row);
+  if (running) dyn.append(screenCard(s, 'insp'));
+  if (t.output) {
+    const sect = document.createElement('div'); sect.className = 'sect pr-mini';
+    sect.innerHTML = `<div class="insp-h"><h3>PR #${t.pr} · ${t.status === 'review' ? 'waiting on your review' : t.status === 'merged' ? 'done' : 'last version'}</h3><span class="grow"></span><button type="button" class="small ghost big">Open large</button></div>`;
+    sect.querySelector('.big').onclick = () => openPreview(t.id);
+    if (t.status === 'review' || t.status === 'merged') sect.append(finishBox(t));
+    if (t.status === 'review') {
+      sect.insertAdjacentHTML('beforeend', `<div class="btnrow" style="align-items:flex-end"><label style="flex:1">Or request changes<textarea class="fbin" rows="1" maxlength="1500" placeholder="Make the second variation darker."></textarea></label><button type="button" class="ch">Send back</button></div>`);
+      sect.querySelector('.ch').onclick = async () => {
+        const fb = sect.querySelector('.fbin'), v = fb.value.trim();
+        if (!v) { fb.focus(); fb.placeholder = 'Write what should change first.'; return; }
+        await patchTicket(t.id, { status: 'changes', feedback: [...(t.feedback || []), v] });
+        const who = getS(t.assignee);
+        if (S.sample && who && !runs[who.id]) startRun(t.id); else toast('Changes requested. Start the revision when the agent is free.');
+      };
+    }
+    if (t.feedback?.length) sect.insertAdjacentHTML('beforeend', `<div><h3>Your earlier feedback</h3><ul class="fb">${t.feedback.map(f => `<li>${esc(f)}</li>`).join('')}</ul></div>`);
+    sect.append(renderOutput(t));
+    if (t.truncated) sect.insertAdjacentHTML('beforeend', '<p class="err">This output was cut short.</p>');
+    dyn.append(sect);
+  }
+  paintScreens();
+};
+// Finishing a PR: download the work, hand it to another agent, or just mark it done.
+function finishBox(t) {
+  const box = document.createElement('div'); box.style.cssText = 'display:flex;flex-direction:column;gap:6px';
+  const review = t.status === 'review';
+  const others = staffSorted().filter(x => x.id !== t.assignee);
+  box.innerHTML = `<h3>${review ? 'Happy with it? Finish it' : 'Use this work'}</h3>
+    <div class="btnrow"><button type="button" class="primary ho">Hand off</button><button type="button" class="dl">Download</button>${review ? '<button type="button" class="ghost dn">Mark done</button>' : ''}</div>
+    <div class="hof" hidden style="display:flex;flex-direction:column;gap:8px">
+      <div class="row2"><label>Hand off to<select class="to">${(others.length ? others : staffSorted()).map(x => `<option value="${x.id}">${esc(x.name)}, ${esc(x.role)}</option>`).join('')}</select></label>
+      <label>Type<select class="k">${kindOptions()}</select></label></div>
+      <label>What should they do with it?<textarea class="nt" rows="2" maxlength="1500" placeholder="Turn this into a landing page."></textarea></label>
+      <div class="btnrow"><button type="button" class="primary go1">Hand off and start</button><button type="button" class="go0">Hand off</button><button type="button" class="ghost cx">Cancel</button></div>
+    </div>`;
+  const hof = box.querySelector('.hof');
+  box.querySelector('.dl').hidden = !S.dl;
+  box.querySelector('.dl').onclick = () => downloadWork(t);
+  box.querySelector('.ho').onclick = () => { hof.hidden = false; box.querySelector('.k').value = 'writing'; box.querySelector('.nt').focus(); };
+  box.querySelector('.cx').onclick = () => { hof.hidden = true; };
+  const dn = box.querySelector('.dn'); if (dn) dn.onclick = () => { patchTicket(t.id, { status: 'merged', mergedAt: Date.now(), doneHow: 'Marked done' }); toast(`#${t.num} is done.`); };
+  const go = start => handOff(t, box.querySelector('.to').value, box.querySelector('.nt').value.trim(), box.querySelector('.k').value, start);
+  box.querySelector('.go1').onclick = () => go(true);
+  box.querySelector('.go0').onclick = () => go(false);
+  box.querySelector('.go1').disabled = !S.sample;
+  if (!S.staff.length) box.querySelector('.ho').disabled = true;
+  return box;
+}
+function fileBase(t) { return (t.title || 'work').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase().slice(0, 60) || 'work'; }
+async function downloadWork(t) {
+  if (!S.dl) { toast("Downloads aren't available in this view."); return; }
+  const filename = fileBase(t) + (t.kind === 'design' ? '.html' : '.md');
+  const data = t.kind === 'design' ? extractHtml(t.output || '') : (t.output || '');
+  try {
+    await S.dl.save({ filename, data });
+    if (t.status === 'review') patchTicket(t.id, { status: 'merged', mergedAt: Date.now(), doneHow: 'Downloaded as ' + filename });
+    toast('Saved ' + filename);
+  } catch (e) {
+    if (e && e.code === 'declined') return;
+    if (e && ['unavailable', 'not_granted', 'capability_disabled', 'capability_removed'].includes(e.code)) { S.dl = null; renderAll(); }
+    toast(e && e.code === 'rate_limited' ? 'A download is already waiting for your OK.' : "Couldn't download that file.");
+  }
+}
+async function handOff(t, toId, note, kind, start) {
+  const to = getS(toId); if (!to) return;
+  const from = getS(t.assignee);
+  const nt = { id: uid('t'), num: nextNum('num'), title: ('Next step: ' + t.title).slice(0, 70), detail: note || `Build on ${from ? from.name + "'s" : 'the'} work from #${t.num}.`, kind, assignee: to.id, status: 'todo', handoffFrom: t.id, createdAt: Date.now() };
+  await putTicket(nt);
+  await patchTicket(t.id, { status: 'merged', mergedAt: t.mergedAt || Date.now(), doneHow: `Handed off to ${to.name} as #${nt.num}` });
+  toast(`Handed #${t.num} to ${to.name}.`);
+  select('ticket', nt.id);
+  if (start && S.sample && !runs[to.id]) startRun(nt.id);
+  else if (start) toast(`${to.name} is busy. #${nt.num} is waiting in the queue.`);
+}
+function renderOutput(t) {
+  if (t.kind === 'design') {
+    const f = document.createElement('iframe'); f.setAttribute('sandbox', ''); f.title = 'Design preview'; f.srcdoc = extractHtml(t.output || '');
+    return f;
+  }
+  const d = document.createElement('div'); d.className = 'md'; d.innerHTML = md(t.output || ''); return d;
+}
+function openPreview(id) {
+  const t = getT(id); if (!t) return;
+  const p = $('preview');
+  p.innerHTML = `<div class="preview-h"><h2>PR #${t.pr} · ${esc(t.title)}</h2><button type="button" class="small">Close preview</button></div><div class="preview-b"></div>`;
+  p.querySelector('button').onclick = closePreview;
+  p.querySelector('.preview-b').append(renderOutput(t));
+  p.hidden = false;
+}
+function closePreview() { const p = $('preview'); p.hidden = true; p.innerHTML = ''; }
+build.hire = box => {
+  box.innerHTML = `
+    <div class="insp-h"><h2>Hire an agent</h2><span class="grow"></span><button type="button" class="ghost small x">Cancel</button></div>
+    <form class="insp-form" style="display:flex;flex-direction:column;gap:10px">
+      <div class="row2"><label>Name<input name="name" required maxlength="16" placeholder="Nova"></label><label>Role<input name="role" required maxlength="28" list="roles" placeholder="Researcher"></label></div>
+      <label>Standing instructions <span>How this agent should work. Sent with every ticket.</span><textarea name="inst" rows="4" maxlength="1200" placeholder="Cite where facts come from. Keep reports short and skimmable."></textarea></label>
+      <div class="btnrow"><button type="submit" class="primary">Hire</button></div>
+    </form>`;
+  box.querySelector('.x').onclick = hidePanel;
+  const f = box.querySelector('form');
+  f.querySelector('input').focus();
+  f.onsubmit = e => {
+    e.preventDefault();
+    if (S.staff.length >= 8) { toast('The floor has 8 desks and they are all taken.'); return; }
+    const used = new Set(S.staff.map(x => x.color));
+    const s = { id: uid('a'), name: f.elements.name.value.trim(), role: f.elements.role.value.trim(), instructions: f.elements.inst.value.trim(), color: PALETTE.find(c => !used.has(c)) || PALETTE[S.staff.length % PALETTE.length], hiredAt: Date.now() };
+    if (!s.name || !s.role) return;
+    newHires.add(s.id); putStaff(s); toast(`${s.name} is walking in.`); select('agent', s.id);
+  };
+};
+build.newticket = box => {
+  box.innerHTML = `
+    <div class="insp-h"><h2>New ticket</h2><span class="grow"></span><button type="button" class="ghost small x">Cancel</button></div>
+    <form style="display:flex;flex-direction:column;gap:10px">
+      <label>Title<input name="title" required maxlength="70" placeholder="Research permitting startups"></label>
+      <label>Details <span>Context, constraints, what done looks like.</span><textarea name="detail" rows="4" maxlength="4000"></textarea></label>
+      <div class="row2"><label>Type<select name="kind">${kindOptions()}</select></label><label>Assign to<select name="who">${staffOptions()}</select></label></div>
+      <div class="btnrow"><button type="submit" class="ghost" value="0">Create</button><button type="submit" class="primary" value="1">Create and start</button></div>
+    </form>`;
+  box.querySelector('.x').onclick = hidePanel;
+  const f = box.querySelector('form');
+  f.elements.who.value = getS(insp.id) ? insp.id : (selectedId || '');
+  f.elements.kind.value = 'writing';
+  f.querySelector('button[value="1"]').disabled = !S.sample;
+  f.querySelector('input').focus();
+  f.onsubmit = async e => {
+    e.preventDefault();
+    const go = e.submitter && e.submitter.value === '1';
+    const t = { id: uid('t'), num: nextNum('num'), title: f.elements.title.value.trim(), detail: f.elements.detail.value.trim(), kind: f.elements.kind.value, assignee: f.elements.who.value || null, status: 'todo', createdAt: Date.now() };
+    if (!t.title) return;
+    await putTicket(t);
+    select('ticket', t.id);
+    const s = getS(t.assignee);
+    if (go && s && !runs[s.id]) startRun(t.id);
+    else toast(go && s ? `${s.name} is busy. The ticket is waiting in the queue.` : `Ticket #${t.num} created.`);
+  };
+};
+function renderInspector() {
+  const box = $('insp');
+  if (insp.mode === 'agent' && !getS(insp.id)) { const f = getS(selectedId) || staffSorted()[0]; insp.id = f ? f.id : null; selectedId = insp.id; }
+  if (insp.mode === 'ticket' && !getT(insp.id)) { const f = getS(selectedId) || staffSorted()[0]; insp = { mode: 'agent', id: f ? f.id : null }; }
+  const key = insp.mode + ':' + (insp.id || '') + (insp.mode === 'agent' && !insp.id ? S.staff.length : '');
+  if (key !== inspKey) { inspKey = key; box.querySelectorAll('.scr').forEach(c => liveCards.delete(c)); box.innerHTML = ''; box.scrollTop = 0; build[insp.mode](box); }
+  update[insp.mode]?.(box);
+}
+async function fireAgent(id) {
+  const s = getS(id); if (!s) return;
+  stopRun(id);
+  for (const t of S.tickets.filter(x => x.assignee === id)) await patchTicket(t.id, { assignee: null, status: t.status === 'working' ? 'todo' : t.status });
+  S.staff = S.staff.filter(x => x.id !== id);
+  if (S.db) S.db.doc('staff/' + id).delete().catch(() => toast("Couldn't remove that agent."));
+  syncActors(); toast(`${s.name} has left the office.`);
+  selectedId = null; insp = { mode: 'agent', id: null }; renderAll();
+}
+
+// ================= top bar =================
+function setView(v) {
+  view = v;
+  $('view-floor').hidden = v !== 'floor'; $('view-ceo').hidden = v !== 'ceo';
+  $('tab-floor').setAttribute('aria-selected', v === 'floor'); $('tab-ceo').setAttribute('aria-selected', v === 'ceo');
+  closePreview(); syncCeo(); paintScreens();
+  if (typeof syncFbar === 'function' && $('fbar')) syncFbar();
+}
+$('tab-floor').onclick = () => setView('floor');
+$('tab-ceo').onclick = () => setView('ceo');
+$('btn-hire').onclick = () => { if (S.staff.length >= 8) { toast('The floor has 8 desks and they are all taken.'); return; } select('hire'); };
+$('btn-ticket').onclick = () => select('newticket', insp.mode === 'agent' ? insp.id : null);
+// Full screen = focus mode: just the moving office, with a floating bar that opens everything else.
+const bodyCL = document.body.classList;
+const inFocus = () => bodyCL.contains('focus');
+function syncFbar() {
+  $('f-board').setAttribute('aria-pressed', bodyCL.contains('show-board'));
+  $('f-ceo').setAttribute('aria-pressed', view === 'ceo');
+  $('f-panel').setAttribute('aria-pressed', bodyCL.contains('show-insp'));
+  $('f-stats').textContent = `${$('st-open').textContent} tickets · ${$('st-work').textContent} working · ${$('st-pr').textContent} PRs · ${$('st-merged').textContent} done`;
+}
+function toggleBoard(on) { bodyCL.toggle('show-board', on ?? !bodyCL.contains('show-board')); if (bodyCL.contains('show-board') && view === 'ceo') setView('floor'); syncFbar(); }
+function togglePanel(on) { bodyCL.toggle('show-insp', on ?? !bodyCL.contains('show-insp')); syncFbar(); }
+function hidePanel() { if (inFocus()) togglePanel(false); else select('agent', selectedId); }
+async function enterFocus() {
+  bodyCL.add('focus'); bodyCL.remove('show-board', 'show-insp'); setView('floor'); syncFbar();
+  try { if (document.fullscreenEnabled && !document.fullscreenElement) await document.documentElement.requestFullscreen(); } catch {}
+}
+async function exitFocus() {
+  bodyCL.remove('focus', 'show-board', 'show-insp'); setView(view); syncFbar();
+  try { if (document.fullscreenElement) await document.exitFullscreen(); } catch {}
+}
+$('btn-full').onclick = enterFocus;
+$('f-exit').onclick = exitFocus;
+$('f-board').onclick = () => toggleBoard();
+$('f-ceo').onclick = () => { setView(view === 'ceo' ? 'floor' : 'ceo'); if (view === 'ceo') bodyCL.remove('show-board'); syncFbar(); };
+$('f-panel').onclick = () => togglePanel();
+$('f-ticket').onclick = () => select('newticket', insp.mode === 'agent' ? insp.id : null);
+$('f-hire').onclick = () => $('btn-hire').onclick();
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && inFocus()) exitFocus(); });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (!jEl('jarvis').hidden) return openJarvis(false);
+  if (!$('preview').hidden) return closePreview();
+  if (inFocus() && bodyCL.contains('show-insp')) return togglePanel(false);
+  if (inFocus() && (bodyCL.contains('show-board') || view === 'ceo')) { bodyCL.remove('show-board'); setView('floor'); return syncFbar(); }
+});
+function showNotice() {
+  const msgs = [];
+  if (S.mode === 'local') msgs.push("Preview mode: this view can't save, so the office resets when you reload.");
+  if (!S.sample && bootDone) msgs.push("Agents can't reach Claude right now. The site's Claude settings need attention.");
+  $('notice').textContent = msgs.join(' ');
+}
+function renderAll() { renderBoard(); syncCeo(); renderInspector(); paintScreens(); if (inFocus()) syncFbar(); }
+
+// ================= Jarvis: the CEO's assistant =================
+// Commands come in as text (typed, phone-keyboard dictation, or the page mic when the browser allows it).
+// One quick Claude call turns a command into office actions, which run here in the page.
+const J = { log: [], busy: false, image: null, imageUrl: null, speak: false, ctl: null };
+try { J.speak = localStorage.getItem('jarvis-speak') === '1'; } catch {}
+const jEl = id => document.getElementById(id);
+function findAgent(name) {
+  if (!name) return null;
+  const n = String(name).trim().toLowerCase();
+  const list = staffSorted();
+  return list.find(s => s.name.toLowerCase() === n) || list.find(s => s.name.toLowerCase().startsWith(n) || n.startsWith(s.name.toLowerCase())) ||
+    list.find(s => s.role.toLowerCase().includes(n)) || null;
+}
+function jSay(who, text, extra) {
+  J.log.push({ who, text, extra, at: Date.now() });
+  if (J.log.length > 40) J.log.shift();
+  renderJarvis();
+  if (who === 'jarvis' && J.speak && 'speechSynthesis' in window) {
+    try { const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch {}
+  }
+}
+function renderJarvis() {
+  const box = jEl('j-log'); if (!box) return;
+  box.innerHTML = '';
+  if (!J.log.length) box.innerHTML = `<p class="j-hint">Try: <b>“Bob, can you research permit timelines in Austin?”</b>, <b>“Call Ren to my office”</b>, <b>“Send this screenshot to Juno and have him tidy up the layout”</b> or <b>“Hire Bob as a marketing lead”</b>.</p>`;
+  J.log.forEach(m => {
+    const d = document.createElement('div'); d.className = 'j-msg ' + (m.who === 'me' ? 'me' : 'bot');
+    d.textContent = m.text;
+    if (m.extra) { const x = document.createElement('div'); x.className = 'j-acts'; x.textContent = m.extra; d.append(x); }
+    box.append(d);
+  });
+  if (J.busy) box.insertAdjacentHTML('beforeend', '<div class="j-msg bot thinking">Thinking…</div>');
+  box.scrollTop = box.scrollHeight;
+  const att = jEl('j-att');
+  att.hidden = !J.image;
+  if (J.image) att.querySelector('img').src = J.imageUrl;
+  jEl('j-send').disabled = J.busy;
+}
+function officeSnapshot() {
+  const team = staffSorted().map(s => {
+    const run = runs[s.id], t = run && getT(run.ticketId);
+    return `- ${s.name}, ${s.role}${t ? ` (working on #${t.num} "${t.title}")` : ' (free)'}`;
+  }).join('\n') || '(nobody hired yet)';
+  const open = S.tickets.filter(t => t.status !== 'merged').sort((a, b) => a.num - b.num).slice(0, 25)
+    .map(t => `- #${t.num} "${t.title}" · ${statusText(t)} · ${getS(t.assignee)?.name || 'unassigned'}`).join('\n') || '(none)';
+  return `Team:\n${team}\n\nOpen tickets and PRs:\n${open}`;
+}
+async function askJarvis(command) {
+  if (!S.sample) { jSay('jarvis', "I can't reach Claude right now. Try reloading the page."); return; }
+  const hasImg = !!J.image;
+  const prompt = `You are Jarvis, the assistant of the CEO of "The AI Office", an office staffed by AI agents. The CEO gives you spoken commands through speech-to-text, so expect typos, missing punctuation and misheard names. Turn the command into actions.
+
+${officeSnapshot()}
+
+Screenshot attached to this command: ${hasImg ? 'YES' : 'no'}
+
+Actions you can use:
+{"type":"create_ticket","agent":"<agent name>","title":"<short title>","details":"<the full request in clear sentences, including anything the CEO said about the screenshot>","kind":"design|code|writing","start":true,"attach_screenshot":${hasImg}}
+{"type":"call_to_office","agent":"<agent name>"}
+{"type":"note","agent":"<agent name>","text":"<note for an agent who is working right now>"}
+{"type":"start","ticket":<number>}
+{"type":"open","ticket":<number>}
+{"type":"hire","name":"<name>","role":"<role>","instructions":"<short standing instructions>"}
+
+Rules:
+- "X, can you do Y" or "have X do Y" means create_ticket for X with start true.
+- Match agent names loosely to the team list (misheard names are common). If nobody fits, don't invent one: say so in reply and suggest hiring them.
+- kind: design for anything visual (pages, layouts, mockups), code for programs and scripts, writing for everything else (research, copy, plans).
+- Use note only when the agent is currently working; otherwise create a ticket.
+- Set attach_screenshot true when a screenshot is attached and the command is about it ("this", "the screenshot", "what's on my screen").
+- If the command is unclear, return no actions and ask one short question in reply.
+
+Reply with only JSON: {"reply":"<one or two short spoken sentences back to the CEO>","actions":[...]}
+
+CEO's command: "${command.replace(/"/g, "'")}"`;
+  J.busy = true; renderJarvis();
+  J.ctl = new AbortController();
+  try {
+    const out = await S.sample.json(prompt, { modelTier: 'quick', cache: false, signal: J.ctl.signal });
+    const done = await runJarvisActions(Array.isArray(out?.actions) ? out.actions : []);
+    J.busy = false;
+    jSay('jarvis', String(out?.reply || 'Done.'), done.length ? done.join(' · ') : '');
+  } catch (e) {
+    J.busy = false;
+    if (e && e.code === 'cancelled') { renderJarvis(); return; }
+    if (e && HIDE_CODES.includes(e.code)) { S.sample = null; showNotice(); }
+    jSay('jarvis', (e && ERR[e.code]) || "Sorry, I didn't catch that. Try saying it another way.");
+  }
+}
+async function attachImageTo(ticketId) {
+  if (!J.image) return false;
+  const blob = J.image;
+  memImages[ticketId] = blob;
+  if (S.assets) {
+    try {
+      const r = await S.assets.upload(blob, { type: blob.type && /^image\/(png|jpeg|gif|webp)$/.test(blob.type) ? blob.type : 'image/png' });
+      await patchTicket(ticketId, { imageId: r.id });
+    } catch { toast("The screenshot is attached for now but couldn't be saved."); }
+  }
+  clearJarvisImage();
+  return true;
+}
+function clearJarvisImage() { if (J.imageUrl) URL.revokeObjectURL(J.imageUrl); J.image = null; J.imageUrl = null; const f = jEl('j-file'); if (f) f.value = ''; renderJarvis(); }
+async function runJarvisActions(actions) {
+  const done = [];
+  for (const a of actions.slice(0, 6)) {
+    const type = a && a.type;
+    if (type === 'hire') {
+      if (S.staff.length >= 8) { done.push('No free desk to hire'); continue; }
+      const name = String(a.name || '').trim().slice(0, 16), role = String(a.role || '').trim().slice(0, 28);
+      if (!name || !role) continue;
+      const used = new Set(S.staff.map(x => x.color));
+      const s = { id: uid('a'), name, role, instructions: String(a.instructions || '').slice(0, 1200), color: PALETTE.find(c => !used.has(c)) || PALETTE[S.staff.length % PALETTE.length], hiredAt: Date.now() };
+      newHires.add(s.id); await putStaff(s); done.push(`Hired ${name}`);
+    } else if (type === 'create_ticket') {
+      const s = findAgent(a.agent);
+      const t = { id: uid('t'), num: nextNum('num'), title: String(a.title || 'New task').slice(0, 70), detail: String(a.details || '').slice(0, 4000), kind: ['design', 'code', 'writing'].includes(a.kind) ? a.kind : 'writing', assignee: s ? s.id : null, status: 'todo', createdAt: Date.now(), fromJarvis: true };
+      await putTicket(t);
+      let note = `Ticket #${t.num} for ${s ? s.name : 'nobody yet'}`;
+      if ((a.attach_screenshot || J.image) && await attachImageTo(t.id)) note += ' with your screenshot';
+      if (a.start !== false && s && !runs[s.id]) { startRun(t.id); note += ', started'; }
+      else if (s && runs[s.id]) note += `, queued behind their current work`;
+      done.push(note);
+    } else if (type === 'call_to_office') {
+      const s = findAgent(a.agent); if (!s) continue;
+      callToOffice(s.id); done.push(`Called ${s.name} in`);
+    } else if (type === 'note') {
+      const s = findAgent(a.agent); if (!s) continue;
+      if (runs[s.id]) { await redirectRun(s.id, String(a.text || '').slice(0, 300)); done.push(`Note sent to ${s.name}`); }
+    } else if (type === 'start') {
+      const t = S.tickets.find(x => x.num === Number(a.ticket)); if (!t) continue;
+      await startRun(t.id); done.push(`Started #${t.num}`);
+    } else if (type === 'open') {
+      const t = S.tickets.find(x => x.num === Number(a.ticket)); if (!t) continue;
+      select('ticket', t.id); done.push(`Opened #${t.num}`);
+    }
+  }
+  return done;
+}
+function callToOffice(staffId) {
+  const a = actors[staffId], s = getS(staffId); if (!a || !s) return;
+  select('agent', staffId);
+  const go = () => {
+    const spot = ceoSpots.find(sp => !Object.values(actors).some(o => o !== a && o.loc === sp)) || ceoSpots[1];
+    walkTo(a, spot, () => { a.state = 'ceo'; a.timer = 30; say(a, 'You wanted to see me?', 4); });
+  };
+  if (runs[staffId]) { toast(`${s.name} will come in after finishing the current ticket.`); a.pending = go; return; }
+  if (a.state === 'walk') { a.pending = go; return; }
+  go();
+}
+function openJarvis(on) {
+  const p = jEl('jarvis'); p.hidden = !(on ?? p.hidden);
+  jEl('j-open').setAttribute('aria-expanded', !p.hidden);
+  if (!p.hidden) { renderJarvis(); setTimeout(() => jEl('j-in').focus(), 30); }
+}
+function setupJarvis() {
+  jEl('j-open').onclick = () => openJarvis();
+  jEl('j-close').onclick = () => openJarvis(false);
+  const sp = jEl('j-speak'); sp.checked = J.speak;
+  sp.onchange = () => { J.speak = sp.checked; try { localStorage.setItem('jarvis-speak', J.speak ? '1' : '0'); } catch {} };
+  jEl('j-form').onsubmit = e => {
+    e.preventDefault();
+    const inp = jEl('j-in'), v = inp.value.trim();
+    if (!v || J.busy) return;
+    inp.value = '';
+    jSay('me', v, J.image ? '+ screenshot' : '');
+    askJarvis(v);
+  };
+  jEl('j-file').onchange = e => {
+    const f = e.target.files && e.target.files[0]; if (!f) return;
+    if (!/^image\//.test(f.type)) { toast('That file is not an image.'); return; }
+    if (J.imageUrl) URL.revokeObjectURL(J.imageUrl);
+    J.image = f; J.imageUrl = URL.createObjectURL(f); renderJarvis(); jEl('j-in').focus();
+  };
+  jEl('j-att-x').onclick = clearJarvisImage;
+  // Paste a screenshot straight into the box.
+  jEl('j-in').addEventListener('paste', e => {
+    const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+    if (!item) return;
+    const f = item.getAsFile(); if (!f) return;
+    e.preventDefault(); if (J.imageUrl) URL.revokeObjectURL(J.imageUrl);
+    J.image = f; J.imageUrl = URL.createObjectURL(f); renderJarvis();
+  });
+  // Page microphone, where the browser allows it. Phone keyboards' own dictation works either way.
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const mic = jEl('j-mic');
+  if (!SR) { mic.hidden = true; return; }
+  let rec = null;
+  mic.onclick = () => {
+    if (rec) { rec.stop(); return; }
+    try { rec = new SR(); } catch { mic.hidden = true; return; }
+    rec.lang = navigator.language || 'en-US'; rec.interimResults = true; rec.continuous = false;
+    const inp = jEl('j-in'); const before = inp.value;
+    mic.setAttribute('aria-pressed', 'true'); mic.textContent = 'Listening…';
+    rec.onresult = ev => { inp.value = (before ? before + ' ' : '') + [...ev.results].map(r => r[0].transcript).join(' '); };
+    rec.onerror = ev => {
+      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed' || ev.error === 'audio-capture') {
+        mic.hidden = true; jSay('jarvis', "This view won't let me use the microphone. Tap the mic on your phone's keyboard to talk instead.");
+      }
+    };
+    rec.onend = () => {
+      rec = null; mic.setAttribute('aria-pressed', 'false'); mic.textContent = 'Talk';
+      const v = inp.value.trim();
+      if (v && v !== before.trim()) { J.speak = J.speak || false; jEl('j-form').requestSubmit(); }
+    };
+    try { rec.start(); } catch { rec = null; mic.hidden = true; }
+  };
+}
+
+// ================= office floor canvas =================
+const W = 960, H = 600, CY = 240;
+const cv = $('office'), ctx = cv.getContext('2d');
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+cv.width = W * dpr; cv.height = H * dpr; ctx.scale(dpr, dpr);
+const desks = [];
+[100, 240, 380, 520].forEach(x => desks.push({ x, top: true, rect: [x - 45, 108, 90, 34], seat: { x, y: 168 } }));
+[100, 240, 380, 520].forEach(x => desks.push({ x, top: false, rect: [x - 45, 328, 90, 34], seat: { x, y: 310 } }));
+const seatLoc = s => ({ x: s.x, y: s.y, via: [{ x: s.x, y: CY }] });
+const DOOR = { x: 790, y: CY, via: [{ x: 790, y: CY }] };
+const ceoSpots = [760, 810, 860].map(x => ({ x, y: 150, via: [{ x: 790, y: CY }, { x: 790, y: 196 }] }));
+const kitchenSpots = [{ x: 872, y: 300 }, { x: 736, y: 530 }, { x: 776, y: 530 }, { x: 822, y: 448 }, { x: 884, y: 492 }, { x: 830, y: 330 }]
+  .map(p => ({ ...p, via: [{ x: 790, y: CY }, { x: 790, y: 286 }] }));
+const newHires = new Set();
+
+function syncActors() {
+  const list = staffSorted();
+  Object.keys(actors).forEach(id => { if (!getS(id)) delete actors[id]; });
+  list.forEach((s, i) => {
+    const desk = desks[i]; if (!desk) return;
+    let a = actors[s.id];
+    if (!a) {
+      const look = LOOKS[i % LOOKS.length];
+      const fromDoor = newHires.has(s.id);
+      a = actors[s.id] = { id: s.id, x: fromDoor ? DOOR.x : desk.seat.x, y: fromDoor ? DOOR.y : desk.seat.y, loc: fromDoor ? DOOR : seatLoc(desk.seat), state: 'desk', path: [], onArrive: null, idle: 0, timer: 0, bubble: '', bubbleT: 0, hair: look[0], skin: look[1], phase: 0 };
+      if (fromDoor) { newHires.delete(s.id); say(a, 'hi, reporting for work', 3); walkTo(a, seatLoc(desk.seat), () => { a.state = 'desk'; }); }
+    }
+    a.desk = desk;
+  });
+}
+function route(from, to) { return [...from.via.slice().reverse(), ...to.via, { x: to.x, y: to.y }]; }
+function walkTo(a, to, onArrive) { a.path = route(a.loc, to); a.loc = to; a.state = 'walk'; a.onArrive = onArrive; }
+function goHome(a) { walkTo(a, seatLoc(a.desk.seat), () => { a.state = 'desk'; a.idle = 0; }); }
+function say(a, text, secs = 3) { a.bubble = text; a.bubbleT = secs; }
+function handIn(staffId, pr) {
+  const a = actors[staffId]; if (!a) return;
+  a.pending = () => {
+    const spot = ceoSpots.find(sp => !Object.values(actors).some(o => o.loc === sp)) || ceoSpots[0];
+    walkTo(a, spot, () => { a.state = 'ceo'; a.timer = 3; say(a, `PR #${pr} is ready for you`, 3); });
+  };
+}
+function updateActors(dt) {
+  for (const a of Object.values(actors)) {
+    if (!a.desk) continue;
+    if (a.bubbleT > 0) { a.bubbleT -= dt; if (a.bubbleT <= 0) a.bubble = ''; }
+    const run = runs[a.id];
+    if (a.state === 'walk') {
+      let step = 110 * dt; a.phase += dt * 11;
+      while (step > 0 && a.path.length) {
+        const p = a.path[0], dx = p.x - a.x, dy = p.y - a.y, d = Math.hypot(dx, dy);
+        if (d <= step) { a.x = p.x; a.y = p.y; step -= d; a.path.shift(); } else { a.x += dx / d * step; a.y += dy / d * step; step = 0; }
+      }
+      if (!a.path.length) { const f = a.onArrive; a.onArrive = null; f && f(); }
+      continue;
+    }
+    if (run) {
+      if (a.state !== 'work') {
+        if (a.loc.x === a.desk.seat.x && a.loc.y === a.desk.seat.y) a.state = 'work';
+        else { walkTo(a, seatLoc(a.desk.seat), () => { a.state = 'work'; }); say(a, 'on it', 2); }
+        continue;
+      }
+      if (a.bubbleT <= 0) {
+        const lines = run.text.split('\n').map(l => l.trim()).filter(l => l.length > 3 && !/^```/.test(l));
+        say(a, run.phase === 'thinking' ? 'thinking…' : (lines[lines.length - 1] || 'typing…'), 2.2);
+      }
+      continue;
+    }
+    if (a.state === 'work') { a.state = 'desk'; a.idle = 0; }
+    if (a.pending && a.state === 'desk') { const f = a.pending; a.pending = null; f(); continue; }
+    if (a.state === 'ceo' || a.state === 'coffee') { a.timer -= dt; if (a.timer <= 0) goHome(a); continue; }
+    if (a.state === 'desk') {
+      a.idle += dt;
+      if (a.idle > 6 && Math.random() < dt * 0.06) {
+        const free = kitchenSpots.filter(sp => !Object.values(actors).some(o => o.loc === sp));
+        const spot = free[Math.floor(Math.random() * free.length)];
+        if (spot) walkTo(a, spot, () => { a.state = 'coffee'; a.timer = 5 + Math.random() * 6; say(a, ['coffee break', 'stretching legs', 'refilling water'][Math.floor(Math.random() * 3)], 2.5); });
+      }
+    }
+  }
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function plant(x, y, r = 12) {
+  ctx.fillStyle = '#7a4e2e'; ctx.beginPath(); ctx.arc(x, y, r * .7, 0, 7); ctx.fill();
+  ctx.fillStyle = '#3f8f4f'; for (let k = 0; k < 5; k++) { const an = k * 1.26; ctx.beginPath(); ctx.arc(x + Math.cos(an) * r * .5, y + Math.sin(an) * r * .5, r * .55, 0, 7); ctx.fill(); }
+  ctx.fillStyle = '#56ad64'; ctx.beginPath(); ctx.arc(x, y, r * .45, 0, 7); ctx.fill();
+}
+function drawRoom(t) {
+  ctx.fillStyle = '#c9a57a'; ctx.fillRect(0, 0, 680, H);
+  ctx.strokeStyle = 'rgba(90,60,30,.18)'; ctx.lineWidth = 1;
+  for (let y = 0; y < H; y += 20) {
+    ctx.beginPath(); ctx.moveTo(0, y + .5); ctx.lineTo(680, y + .5); ctx.stroke();
+    for (let x = (y / 20 % 2) * 60; x < 680; x += 120) { ctx.beginPath(); ctx.moveTo(x + .5, y); ctx.lineTo(x + .5, y + 20); ctx.stroke(); }
+  }
+  ctx.fillStyle = '#9c6b4b'; ctx.fillRect(30, CY - 14, 650, 28); ctx.fillStyle = '#b07d58'; ctx.fillRect(34, CY - 10, 642, 20);
+  ctx.fillStyle = '#b8b2a6'; ctx.fillRect(680, 225, 280, 30);
+  // CEO office: dark carpet + rug
+  ctx.fillStyle = '#3d4a3f'; ctx.fillRect(680, 0, 280, 225);
+  ctx.fillStyle = '#8c3b2f'; rr(726, 120, 168, 80, 6); ctx.fill(); ctx.strokeStyle = '#d9b36c'; ctx.lineWidth = 2; rr(732, 126, 156, 68, 4); ctx.stroke();
+  for (let y = 255; y < H; y += 24) for (let x = 680; x < 960; x += 24) { ctx.fillStyle = ((x + y) / 24) % 2 ? '#e8e3d7' : '#d6cfbf'; ctx.fillRect(x, y, 24, 24); }
+  // desks
+  staffSorted().forEach((s, i) => {
+    const d = desks[i]; if (!d) return; const [x, y, w, h] = d.rect;
+    ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(x + 3, y + 4, w, h);
+    ctx.fillStyle = '#7b5438'; ctx.fillRect(x, y, w, h); ctx.fillStyle = '#8f6443'; ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
+    const mx = d.x - 18, my = d.top ? y + 4 : y + h - 16, run = runs[s.id];
+    ctx.fillStyle = '#23262e'; ctx.fillRect(mx, my, 36, 12);
+    ctx.fillStyle = run ? (Math.floor(t * 4 + i) % 2 ? '#7fd8ff' : '#6cc7ee') : '#3a4252'; ctx.fillRect(mx + 2, my + 2, 32, 8);
+    if (run) { ctx.fillStyle = '#1f6f92'; for (let k = 0; k < 3; k++) ctx.fillRect(mx + 4, my + 3 + k * 2, 6 + ((k * 7 + Math.floor(t * 6)) % 22), 1); }
+    ctx.fillStyle = '#d7d9de'; ctx.fillRect(d.x - 12, d.top ? y + h - 9 : y + 3, 24, 5);
+    ctx.fillStyle = s.color; ctx.beginPath(); ctx.arc(x + w - 10, y + h / 2, 4, 0, 7); ctx.fill();
+    ctx.fillStyle = '#2f3440'; ctx.beginPath(); ctx.arc(d.seat.x, d.seat.y + (d.top ? 4 : -4), 11, 0, 7); ctx.fill();
+    ctx.font = '500 10px "Pixelify Sans", monospace'; ctx.fillStyle = '#f3e7d6'; ctx.textAlign = 'center';
+    ctx.fillText(s.name.toUpperCase().slice(0, 10), d.x, d.top ? y + h - 12 : y + 26); ctx.textAlign = 'left';
+  });
+  desks.slice(S.staff.length).forEach(d => { // empty desks
+    const [x, y, w, h] = d.rect; ctx.fillStyle = 'rgba(123,84,56,.35)'; ctx.fillRect(x, y, w, h);
+    ctx.font = '500 10px "Pixelify Sans", monospace'; ctx.fillStyle = 'rgba(60,40,20,.55)'; ctx.textAlign = 'center'; ctx.fillText('OPEN DESK', d.x, y + 21); ctx.textAlign = 'left';
+  });
+  plant(28, 28); plant(650, 28); plant(28, 400); plant(650, 400);
+  ctx.fillStyle = '#5c3d27'; ctx.fillRect(210, 14, 80, 12); ctx.fillRect(410, 14, 80, 12);
+  ['#c0504d', '#4f81bd', '#9bbb59', '#f79646', '#8064a2', '#4bacc6'].forEach((c, k) => { ctx.fillStyle = c; ctx.fillRect(214 + k * 12, 15, 8, 10); ctx.fillRect(414 + k * 12, 15, 8, 10); });
+  // CEO desk, chair, you
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; rr(744, 64, 140, 40, 6); ctx.fill();
+  ctx.fillStyle = '#4a2f1d'; rr(740, 60, 140, 40, 6); ctx.fill(); ctx.fillStyle = '#5d3b24'; rr(744, 64, 132, 32, 4); ctx.fill();
+  ctx.fillStyle = '#23262e'; ctx.fillRect(760, 66, 30, 10); ctx.fillRect(800, 66, 30, 10);
+  ctx.fillStyle = Object.keys(runs).length ? '#7fd8ff' : '#3a4252'; ctx.fillRect(762, 68, 26, 6); ctx.fillRect(802, 68, 26, 6);
+  { const pulse = J.busy ? 4 + Math.sin(t * 8) * 3 : 2 + Math.sin(t * 2) * 1.5; // Jarvis, hovering by the CEO desk
+    ctx.fillStyle = 'rgba(79,227,207,.25)'; ctx.beginPath(); ctx.arc(862, 40, 10 + pulse, 0, 7); ctx.fill();
+    ctx.fillStyle = '#4fe3cf'; ctx.beginPath(); ctx.arc(862, 40, 8, 0, 7); ctx.fill();
+    ctx.fillStyle = '#e9fffb'; ctx.beginPath(); ctx.arc(859, 37, 3, 0, 7); ctx.fill(); }
+  ctx.fillStyle = '#1b1e25'; ctx.beginPath(); ctx.arc(810, 40, 13, 0, 7); ctx.fill();
+  ctx.fillStyle = '#222'; ctx.beginPath(); ctx.ellipse(810, 42, 12, 8, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#e9c49f'; ctx.beginPath(); ctx.arc(810, 40, 6.5, 0, 7); ctx.fill();
+  ctx.fillStyle = '#4a3222'; ctx.beginPath(); ctx.arc(810, 38, 5.5, Math.PI, 0); ctx.fill();
+  ctx.font = '600 10px "Pixelify Sans", monospace'; ctx.fillStyle = '#f3e7d6'; ctx.textAlign = 'center'; ctx.fillText('YOU', 810, 90); ctx.textAlign = 'left';
+  // wall of screens: one mini monitor per agent
+  staffSorted().forEach((s, i) => { const x = 902, y = 30 + i * 22; ctx.fillStyle = '#1e2230'; ctx.fillRect(x, y, 30, 18); ctx.fillStyle = runs[s.id] ? '#7fd8ff' : '#2f3a52'; ctx.fillRect(x + 2, y + 2, 26, 14); ctx.fillStyle = s.color; ctx.fillRect(x + 2, y + 14, 26, 2); });
+  plant(700, 205, 10); plant(700, 24, 10);
+  // kitchen
+  ctx.fillStyle = '#9aa1ad'; ctx.fillRect(904, 262, 30, 150); ctx.fillStyle = '#b8bfca'; ctx.fillRect(906, 264, 26, 146);
+  ctx.fillStyle = '#2d2f35'; ctx.fillRect(908, 284, 22, 26); ctx.fillStyle = '#e04b3a'; ctx.fillRect(912, 288, 4, 4);
+  ctx.fillStyle = '#e9ecf0'; ctx.fillRect(904, 420, 30, 44); ctx.fillStyle = '#c3c8d0'; ctx.fillRect(904, 441, 30, 2);
+  ctx.fillStyle = 'rgba(0,0,0,.15)'; ctx.beginPath(); ctx.arc(855, 473, 24, 0, 7); ctx.fill(); ctx.fillStyle = '#f2efe8'; ctx.beginPath(); ctx.arc(852, 470, 24, 0, 7); ctx.fill();
+  ctx.fillStyle = '#4c6e8f'; rr(714, 548, 90, 26, 6); ctx.fill(); ctx.fillStyle = '#5d82a6'; rr(718, 552, 82, 14, 4); ctx.fill();
+  plant(930, 560, 11);
+  // kanban wall
+  const x0 = 40, y0 = 432, w = 600, h = 136, cols = ['todo', 'working', 'review', 'merged'], names = ['TICKETS', 'IN PROGRESS', 'PULL REQUESTS', 'DONE'], cw = w / 4;
+  ctx.fillStyle = 'rgba(0,0,0,.2)'; ctx.fillRect(x0 + 4, y0 + 5, w, h); ctx.fillStyle = '#9098a6'; ctx.fillRect(x0 - 4, y0 - 4, w + 8, h + 8); ctx.fillStyle = '#fbfbf8'; ctx.fillRect(x0, y0, w, h);
+  ctx.font = '700 11px "Pixelify Sans", monospace';
+  cols.forEach((c, k) => {
+    const cx = x0 + k * cw; if (k) { ctx.fillStyle = '#d9dce2'; ctx.fillRect(cx, y0 + 6, 1, h - 12); }
+    ctx.fillStyle = k === 3 ? '#1f7a74' : '#3b4252'; ctx.fillText(names[k], cx + 8, y0 + 18);
+    const list = S.tickets.filter(t => colOf(t) === c).slice(0, 15);
+    hits.cols.push({ x: cx, y: y0, w: cw, h: 24 });
+    list.forEach((t, j) => {
+      const sx = cx + 8 + (j % 5) * 27, sy = y0 + 28 + Math.floor(j / 5) * 34;
+      hits.notes.push({ x: sx, y: sy, w: 23, h: 28, id: t.id });
+      if (hover.note === t.id || (insp.mode === 'ticket' && insp.id === t.id)) { ctx.fillStyle = '#1f7a74'; ctx.fillRect(sx - 3, sy - 3, 29, 34); }
+      ctx.fillStyle = 'rgba(0,0,0,.12)'; ctx.fillRect(sx + 1, sy + 2, 23, 28);
+      const owner = getS(t.assignee);
+      ctx.fillStyle = owner ? owner.color : '#c9cdd4'; ctx.fillRect(sx, sy, 23, 28);
+      ctx.fillStyle = 'rgba(255,255,255,.28)'; ctx.fillRect(sx, sy, 23, 5);
+      ctx.fillStyle = '#fff'; ctx.font = '700 12px "Pixelify Sans", monospace'; ctx.textAlign = 'center';
+      ctx.fillText(owner ? owner.name[0].toUpperCase() : '?', sx + 11.5, sy + 19); ctx.textAlign = 'left'; ctx.font = '700 11px "Pixelify Sans", monospace';
+      if (t.status === 'changes') { ctx.fillStyle = '#c0392b'; ctx.fillRect(sx + 17, sy + 21, 4, 4); }
+    });
+  });
+  // walls
+  ctx.fillStyle = '#343946';
+  ctx.fillRect(0, 0, W, 10); ctx.fillRect(0, H - 10, W, 10); ctx.fillRect(0, 0, 10, H); ctx.fillRect(W - 10, 0, 10, H);
+  ctx.fillRect(676, 0, 8, 225); ctx.fillRect(676, 255, 8, H - 255);
+  ctx.fillRect(676, 221, 84, 8); ctx.fillRect(820, 221, 140, 8); ctx.fillRect(676, 251, 84, 8); ctx.fillRect(820, 251, 140, 8);
+  ctx.fillStyle = '#9fd3ef'; for (let x = 40; x < 660; x += 110) ctx.fillRect(x, 2, 70, 5);
+  ctx.font = '600 11px "Pixelify Sans", monospace'; ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillText('CEO OFFICE', 694, 214);
+  ctx.fillStyle = 'rgba(40,40,40,.6)'; ctx.fillText('KITCHEN', 700, 578);
+}
+function drawActor(a) {
+  const s = getS(a.id); if (!s) return;
+  const bob = a.state === 'walk' ? Math.sin(a.phase) * 1.5 : 0, x = a.x, y = a.y + bob;
+  if (selectedId === a.id) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(a.x, a.y, 17, 0, 7); ctx.stroke(); ctx.strokeStyle = '#1f7a74'; ctx.beginPath(); ctx.arc(a.x, a.y, 19, 0, 7); ctx.stroke(); }
+  ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.beginPath(); ctx.ellipse(a.x + 2, a.y + 6, 11, 6, 0, 0, 7); ctx.fill();
+  if (a.state === 'walk') { ctx.fillStyle = a.skin; const sw = Math.sin(a.phase) * 4; ctx.beginPath(); ctx.arc(x - 10, y + sw, 3, 0, 7); ctx.arc(x + 10, y - sw, 3, 0, 7); ctx.fill(); }
+  ctx.fillStyle = s.color; ctx.beginPath(); ctx.ellipse(x, y, 11, 8, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = a.skin; ctx.beginPath(); ctx.arc(x, y - 2, 6.5, 0, 7); ctx.fill();
+  ctx.fillStyle = a.hair; ctx.beginPath(); ctx.arc(x, y - 4, 5.5, 0, 7); ctx.fill();
+  if (a.state === 'ceo') { ctx.fillStyle = '#f6d86e'; ctx.fillRect(x + 7, y - 2, 10, 12); }
+  if (a.state === 'coffee') { ctx.fillStyle = '#fff'; ctx.fillRect(x - 15, y - 1, 6, 7); ctx.fillStyle = '#6b3e1f'; ctx.fillRect(x - 14, y, 4, 2); }
+  if (a.state !== 'work' && a.state !== 'desk' || selectedId === a.id) {
+    ctx.font = '600 10px "Pixelify Sans", monospace'; ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(20,24,33,.75)'; const tw = ctx.measureText(s.name).width + 8; rr(a.x - tw / 2, a.y + 12, tw, 13, 3); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillText(s.name, a.x, a.y + 22); ctx.textAlign = 'left';
+  }
+}
+function drawBubble(a) {
+  if (!a.bubble) return;
+  ctx.font = '12px "Atkinson Hyperlegible", system-ui, sans-serif';
+  const text = a.bubble.length > 32 ? a.bubble.slice(0, 31) + '…' : a.bubble;
+  const tw = ctx.measureText(text).width + 14, bh = 20;
+  const bx = Math.max(14, Math.min(W - 14 - tw, a.x - tw / 2)); let by = a.y - 42; if (by < 12) by = a.y + 26;
+  ctx.fillStyle = 'rgba(0,0,0,.18)'; rr(bx + 2, by + 2, tw, bh, 6); ctx.fill();
+  ctx.fillStyle = '#fff'; rr(bx, by, tw, bh, 6); ctx.fill();
+  if (by < a.y) { ctx.beginPath(); ctx.moveTo(a.x - 5, by + bh); ctx.lineTo(a.x + 1, by + bh + 6); ctx.lineTo(a.x + 5, by + bh); ctx.fill(); }
+  ctx.fillStyle = '#1c2230'; ctx.fillText(text, bx + 7, by + 14);
+}
+const hits = { notes: [], cols: [] }, hover = { note: null };
+function draw(t) {
+  hits.notes = []; hits.cols = [];
+  drawRoom(t);
+  const list = Object.values(actors).sort((p, q) => p.y - q.y);
+  list.forEach(drawActor); list.forEach(drawBubble);
+  if (S.mode === 'loading') { ctx.fillStyle = 'rgba(20,24,33,.45)'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = '#fff'; ctx.font = '700 26px "Pixelify Sans", monospace'; ctx.textAlign = 'center'; ctx.fillText('Unlocking the office…', W / 2, H / 2); ctx.textAlign = 'left'; }
+}
+function hitTest(e) {
+  const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width, y = (e.clientY - r.top) * H / r.height;
+  const inBox = b => x >= b.x - 2 && x <= b.x + b.w + 2 && y >= b.y - 2 && y <= b.y + b.h + 2;
+  const note = hits.notes.find(inBox); if (note) return { kind: 'note', id: note.id };
+  let best = null, bd = 26;
+  Object.values(actors).forEach(a => { const d = Math.hypot(a.x - x, a.y - y); if (d < bd) { bd = d; best = a; } });
+  if (best) return { kind: 'agent', id: best.id };
+  if (hits.cols.some(inBox) || (x > 40 && x < 640 && y > 432 && y < 568)) return { kind: 'board' };
+  if (Math.hypot(x - 862, y - 40) < 16) return { kind: 'jarvis' };
+  if (x > 684 && x < 950 && y > 10 && y < 221) return { kind: 'ceo' };
+  return null;
+}
+cv.addEventListener('click', e => {
+  const h = hitTest(e); if (!h) return;
+  if (h.kind === 'note') select('ticket', h.id);
+  else if (h.kind === 'agent') select('agent', h.id);
+  else if (h.kind === 'board') { if (document.body.classList.contains('focus')) toggleBoard(true); else $('board').scrollIntoView({ block: 'nearest' }); }
+  else if (h.kind === 'ceo') setView('ceo');
+  else if (h.kind === 'jarvis') openJarvis(true);
+});
+cv.addEventListener('mousemove', e => {
+  const h = hitTest(e);
+  hover.note = h && h.kind === 'note' ? h.id : null;
+  cv.style.cursor = h ? 'pointer' : 'default';
+  const t = hover.note && getT(hover.note);
+  cv.title = t ? `#${t.num} ${t.title} (${statusText(t)})` : h && h.kind === 'jarvis' ? 'Talk to Jarvis' : h && h.kind === 'ceo' ? 'Open the CEO office' : h && h.kind === 'board' ? 'Open tickets and PRs' : '';
+});
+let last = performance.now();
+function frame(now) { const dt = Math.min(0.1, (now - last) / 1000); last = now; updateActors(dt); draw(now / 1000); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+
+// ================= boot =================
+renderAll();
+const use = n => (window.claude && window.claude.use) ? window.claude.use(n).catch(() => null) : Promise.resolve(null);
+use('downloads').then(d => { S.dl = d; renderAll(); });
+use('assets').then(a => { S.assets = a; });
+setupJarvis();
+use('sample').then(fn => { S.sample = fn; renderAll(); showNotice(); remoteChanges(); });
+use('db').then(db => {
+  if (db) {
+    S.db = db; S.mode = 'db';
+    let first = true;
+    db.collection('staff').onSnapshot(snap => {
+      S.staff = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+      syncActors(); renderAll(); first = false; remoteChanges();
+    }, () => toast("Lost the connection to the office's records. Reload to reconnect."));
+    db.collection('tickets').onSnapshot(snap => {
+      S.tickets = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+      renderAll(); remoteChanges();
+    }, () => {});
+  } else {
+    S.mode = 'local';
+    const now = Date.now();
+    [['Juno', 'Frontend engineer', 'Prefer plain HTML and CSS. Keep it accessible.'], ['Ren', 'Product designer', 'Bold, clean layouts. Always offer options.'], ['Theo', 'Copywriter', 'Short sentences. No jargon.']]
+      .forEach(([name, role, instructions], i) => S.staff.push({ id: 'demo' + i, name, role, instructions, color: PALETTE[i], hiredAt: now + i }));
+    S.tickets.push({ id: 'demo-t1', num: 1, title: 'Example: three hero section variations', detail: 'For a note-taking app called Inkwell.', kind: 'design', assignee: 'demo1', status: 'todo', createdAt: now });
+    syncActors(); renderAll();
+  }
+  bootDone = true; showNotice();
+});
+setTimeout(() => { if (!bootDone) return; showNotice(); }, 11000);
+})();
+</script>
+</body>
+</html>

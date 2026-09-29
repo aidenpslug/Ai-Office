@@ -1,0 +1,14 @@
+{
+  "name": "ai-office",
+  "private": true,
+  "type": "module",
+  "description": "The AI Office: a pixel office of Claude agents you hire, give tickets to, and review.",
+  "scripts": {
+    "dev": "node dev/server.mjs"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.129.0",
+    "@supabase/supabase-js": "^2.117.2"
+  }
+}
