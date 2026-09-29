@@ -1090,26 +1090,43 @@ function setupJarvis() {
   // Page microphone, where the browser allows it. Phone keyboards' own dictation works either way.
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const mic = jEl('j-mic');
-  if (!SR) { mic.hidden = true; return; }
-  let rec = null;
+  const iOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const standalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+  const HELP = {
+    unsupported: iOS && standalone
+      ? "The Talk button doesn't work in the home-screen version of the site. Open it in Safari instead, or tap the mic on your keyboard."
+      : "This browser can't listen directly. Tap the mic on your keyboard to dictate, or use Chrome or Safari.",
+    'not-allowed': iOS
+      ? 'The microphone is blocked for this site. In Safari, tap the aA button in the address bar, then Website Settings, set Microphone to Allow, and try again.'
+      : 'The microphone is blocked for this site. Click the lock or settings icon next to the address, allow the Microphone, then try again.',
+    'service-not-allowed': iOS
+      ? 'Your iPhone needs dictation turned on: Settings, General, Keyboard, Enable Dictation. Then try again.'
+      : "Speech recognition is turned off in this browser. Try Chrome, or use your keyboard's mic.",
+    'audio-capture': "I can't find a microphone. Check that one is connected and not used by another app.",
+    'no-speech': "I didn't hear anything. Tap Talk and speak right away.",
+    network: "The speech service couldn't be reached. Check your connection, or use your keyboard's mic.",
+  };
+  let rec = null, heard = false, quiet = null;
   mic.onclick = () => {
+    if (!SR) { jSay('jarvis', HELP.unsupported); return; }
     if (rec) { rec.stop(); return; }
-    try { rec = new SR(); } catch { mic.hidden = true; return; }
+    try { rec = new SR(); } catch { rec = null; jSay('jarvis', HELP.unsupported); return; }
     rec.lang = navigator.language || 'en-US'; rec.interimResults = true; rec.continuous = false;
-    const inp = jEl('j-in'); const before = inp.value;
-    mic.setAttribute('aria-pressed', 'true'); mic.textContent = 'Listening…';
-    rec.onresult = ev => { inp.value = (before ? before + ' ' : '') + [...ev.results].map(r => r[0].transcript).join(' '); };
+    const inp = jEl('j-in'); const before = inp.value; heard = false;
+    mic.setAttribute('aria-pressed', 'true'); mic.textContent = 'Listening… tap to stop';
+    // Some browsers start listening but never hear the mic; give up after a few quiet seconds instead of hanging.
+    quiet = setTimeout(() => { if (rec && !heard) { rec.abort(); jSay('jarvis', HELP['no-speech'] + " If this keeps happening, tap the mic on your keyboard instead."); } }, 8000);
+    rec.onresult = ev => { heard = true; inp.value = (before ? before + ' ' : '') + [...ev.results].map(r => r[0].transcript).join(' '); };
     rec.onerror = ev => {
-      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed' || ev.error === 'audio-capture') {
-        mic.hidden = true; jSay('jarvis', "This view won't let me use the microphone. Tap the mic on your phone's keyboard to talk instead.");
-      }
+      console.warn('Jarvis mic error:', ev.error);
+      if (ev.error !== 'aborted') jSay('jarvis', HELP[ev.error] || `The microphone stopped (${ev.error}). Try again, or use your keyboard's mic.`);
     };
     rec.onend = () => {
-      rec = null; mic.setAttribute('aria-pressed', 'false'); mic.textContent = 'Talk';
+      clearTimeout(quiet); rec = null; mic.setAttribute('aria-pressed', 'false'); mic.textContent = 'Talk';
       const v = inp.value.trim();
-      if (v && v !== before.trim()) { J.speak = J.speak || false; jEl('j-form').requestSubmit(); }
+      if (heard && v && v !== before.trim()) jEl('j-form').requestSubmit();
     };
-    try { rec.start(); } catch { rec = null; mic.hidden = true; }
+    try { rec.start(); } catch (e) { rec = null; mic.setAttribute('aria-pressed', 'false'); mic.textContent = 'Talk'; jSay('jarvis', HELP.unsupported); }
   };
 }
 
