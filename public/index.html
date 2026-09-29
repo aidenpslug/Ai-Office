@@ -814,7 +814,13 @@ const LESSON_CSS = `
 .lv-ctl .lv-sp { flex: 1; }
 .lv .lv-h { color: #eaf7f3; text-transform: none; letter-spacing: 0; font-family: inherit; }
 .lv .lv-ctl label { flex-direction: row; font-weight: 400; color: inherit; text-transform: none; letter-spacing: 0; margin: 0; }
-.lv .lv-ctl select { font: inherit; font-size: 13px; width: auto; padding: 4px 6px; }`;
+.lv .lv-ctl select { font: inherit; font-size: 13px; width: auto; padding: 4px 6px; }
+.lv:fullscreen, .lv.lv-max { position: fixed; inset: 0; z-index: 1000; background: #0b1216; color: #eaf7f3; padding: 16px; height: 100%; }
+.lv:fullscreen .lv-stage, .lv.lv-max .lv-stage { aspect-ratio: auto; max-height: none; border-radius: 6px; }
+.lv:fullscreen .lv-h, .lv.lv-max .lv-h { font-size: clamp(24px, 4.5vw, 64px); }
+.lv:fullscreen .lv-line, .lv.lv-max .lv-line { font-size: clamp(18px, 3vw, 40px); }
+.lv:fullscreen .lv-cap, .lv.lv-max .lv-cap { font-size: clamp(16px, 2.2vw, 28px); }
+.lv .lv-stage { cursor: pointer; }`;
 function mountLessonPlayer(root, data) {
   const scenes = (Array.isArray(data && data.scenes) ? data.scenes : []).filter(s => s && (s.heading || s.narration || (s.lines || []).length));
   if (!scenes.length) { root.textContent = "This video couldn't be read."; return () => {}; }
@@ -823,7 +829,7 @@ function mountLessonPlayer(root, data) {
     '<div class="lv-bar">' + scenes.map(() => '<i><b></b></i>').join('') + '</div>' +
     '<div class="lv-ctl"><button type="button" class="lv-play">Play</button><button type="button" class="lv-prev">Back</button><button type="button" class="lv-next">Next</button><span class="lv-sp"></span>' +
     (canTalk ? '<label><input type="checkbox" class="lv-voice" checked> Voice</label>' : '') +
-    '<label>Speed <select class="lv-rate"><option value="0.85">Slow</option><option value="1" selected>Normal</option><option value="1.2">Fast</option></select></label></div></div>';
+    '<label>Speed <select class="lv-rate"><option value="0.85">Slow</option><option value="1" selected>Normal</option><option value="1.2">Fast</option></select></label><button type="button" class="lv-fs">Full screen</button></div></div>';
   const q = s => root.querySelector(s);
   const bars = [...root.querySelectorAll('.lv-bar b')];
   let i = 0, playing = false, timers = [], t0 = 0, dur = 0, raf = 0, alive = true;
@@ -860,11 +866,28 @@ function mountLessonPlayer(root, data) {
     } else timers.push(setTimeout(() => { reveal(); next(); }, dur));
   }
   function stop() { playing = false; clear(); q('.lv-play').textContent = 'Play'; if (window.__lessonPlaying === stop) window.__lessonPlaying = null; }
+  // Full screen: the real thing where the browser allows it, otherwise fill the window (iPhone Safari).
+  const lv = q('.lv'), fsBtn = q('.lv-fs');
+  const isFull = () => document.fullscreenElement === lv || lv.classList.contains('lv-max');
+  const syncFs = () => { fsBtn.textContent = isFull() ? 'Exit full screen' : 'Full screen'; };
+  function toggleFs() {
+    if (isFull()) { if (document.fullscreenElement === lv) document.exitFullscreen(); else lv.classList.remove('lv-max'); }
+    else if (lv.requestFullscreen) lv.requestFullscreen().catch(() => lv.classList.add('lv-max')).then(syncFs);
+    else if (lv.webkitRequestFullscreen) lv.webkitRequestFullscreen();
+    else lv.classList.add('lv-max');
+    syncFs();
+  }
+  fsBtn.onclick = toggleFs;
+  q('.lv-stage').ondblclick = toggleFs;
+  q('.lv-stage').onclick = () => q('.lv-play').click();
+  document.addEventListener('fullscreenchange', syncFs);
+  lv.addEventListener('keydown', e => { if (e.key === 'Escape' && lv.classList.contains('lv-max')) { e.stopPropagation(); lv.classList.remove('lv-max'); syncFs(); } });
+  lv.tabIndex = -1;
   q('.lv-play').onclick = () => { if (playing) { stop(); reveal(); } else { if (q('.lv-play').textContent === 'Replay') i = 0; play(); } };
   q('.lv-next').onclick = () => { const was = playing; stop(); i = Math.min(scenes.length - 1, i + 1); show(i); if (was) play(); else reveal(); };
   q('.lv-prev').onclick = () => { const was = playing; stop(); i = Math.max(0, i - 1); show(i); if (was) play(); else reveal(); };
   show(0); reveal();
-  return () => { alive = false; stop(); };
+  return () => { alive = false; stop(); document.removeEventListener('fullscreenchange', syncFs); if (document.fullscreenElement === lv) document.exitFullscreen(); };
 }
 function parseLesson(text) {
   const s = String(text || ''), a = s.indexOf('{'), b = s.lastIndexOf('}');
