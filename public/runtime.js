@@ -6,7 +6,7 @@
   const STARTERS = [
     ['Juno', 'Frontend engineer', 'Prefer plain HTML and CSS. Keep it accessible.'],
     ['Ren', 'Product designer', 'Bold, clean layouts. Always offer options.'],
-    ['Bill', 'Educator', 'You are a patient tutor. Explain homework and quiz problems in short, easy steps, say why each step works, and double-check the final answer. Never give just the answer without the steps.'],
+    ['Bill', 'Educator', 'You are a patient, upbeat tutor with the energy of a TV science-show host. Explain homework and quiz problems in short, easy steps, say why each step works, and double-check the final answer. Never give just the answer without the steps.'],
   ];
   const BILL = 2;
   const TUTOR_ROLE = /educat|tutor|teach/i;

@@ -305,7 +305,7 @@ const FORMATS = {
   code: 'Deliver working code as a pull request. Start with a short "Summary" paragraph, then each file as a fenced code block preceded by its file path on its own line. Keep it focused, under about 250 lines total.',
   writing: 'Deliver the finished text in Markdown. No preamble.',
   steps: 'You are tutoring a student with homework or a quiz. Solve it and teach it. If an image is attached, read the problem from it; if there are several problems, do each in turn. Reply in Markdown with no preamble: "## Problem" restating it in a line or two; "## Steps" with "### Step 1: <short name>" and so on, each step one to three short sentences saying what to do and why, with any working on its own line in a code block; "## Answer" with the final answer in bold; then "## Try one" with a similar practice problem and its answer on the last line after "Answer:". Use plain words a 12-year-old can follow, and double-check the math.',
-  video: 'You are making a short narrated explainer video that walks a student through the solution step by step. If an image is attached, read the problem from it. Reply with only JSON, no code fences or other text, in this shape: {"title":"<short title>","scenes":[{"heading":"<short heading>","lines":["<up to 4 short lines shown on screen: the working, equations or key words>"],"narration":"<1 to 3 friendly spoken sentences explaining this step>"}]}. Use 4 to 10 scenes: the first shows the problem, then one scene per step, and the last gives the final answer and a quick tip. Narration is read aloud by a computer voice, so write math the way you would say it ("x squared", "divided by"); on-screen lines can use symbols. Double-check the math.',
+  video: 'You are making a short narrated explainer video that walks a student through the solution step by step. If an image is attached, read the problem from it. Reply with only JSON, no code fences or other text, in this shape: {"title":"<short title>","scenes":[{"heading":"<short heading>","lines":["<up to 4 short lines shown on screen: the working, equations or key words>"],"narration":"<1 to 3 friendly spoken sentences explaining this step>"}]}. Narrate like an upbeat TV science-show host: curious, excited and warm, with short punchy sentences, a quick real-world hook in the first scene, and little bursts of energy like "Now here is the cool part!" or "Watch this!" when a step clicks. Keep it clear, not silly, and never impersonate or name a real person. Use 4 to 10 scenes: the first shows the problem, then one scene per step, and the last gives the final answer and a quick tip. Narration is read aloud by a computer voice, so write math the way you would say it ("x squared", "divided by"); on-screen lines can use symbols. Double-check the math.',
 };
 const KIND_LABEL = { design: 'Design', code: 'Code', writing: 'Writing', steps: 'Step-by-step', video: 'Video lesson' };
 const TUTOR = /educat|tutor|teach/i;
@@ -812,6 +812,8 @@ const LESSON_CSS = `
 .lv-ctl button.lv-play { background: #1f7a74; color: #fff; border-color: #1f7a74; min-width: 76px; }
 .lv-ctl label { font-size: 13px; display: flex; gap: 4px; align-items: center; }
 .lv-ctl .lv-sp { flex: 1; }
+.lv-ctl .lv-who { font: inherit; font-size: 13px; max-width: 150px; }
+.lv-ctl .lv-who:empty { display: none; }
 .lv .lv-h { color: #eaf7f3; text-transform: none; letter-spacing: 0; font-family: inherit; }
 .lv .lv-ctl label { flex-direction: row; font-weight: 400; color: inherit; text-transform: none; letter-spacing: 0; margin: 0; }
 .lv .lv-ctl select { font: inherit; font-size: 13px; width: auto; padding: 4px 6px; }
@@ -828,13 +830,28 @@ function mountLessonPlayer(root, data) {
   root.innerHTML = '<div class="lv"><div class="lv-stage"><div class="lv-num"></div><h3 class="lv-h"></h3><div class="lv-lines"></div><div class="lv-cap"></div></div>' +
     '<div class="lv-bar">' + scenes.map(() => '<i><b></b></i>').join('') + '</div>' +
     '<div class="lv-ctl"><button type="button" class="lv-play">Play</button><button type="button" class="lv-prev">Back</button><button type="button" class="lv-next">Next</button><span class="lv-sp"></span>' +
-    (canTalk ? '<label><input type="checkbox" class="lv-voice" checked> Voice</label>' : '') +
+    (canTalk ? '<label><input type="checkbox" class="lv-voice" checked> Voice</label><select class="lv-who" title="Narrator voice"></select>' : '') +
     '<label>Speed <select class="lv-rate"><option value="0.85">Slow</option><option value="1" selected>Normal</option><option value="1.2">Fast</option></select></label><button type="button" class="lv-fs">Full screen</button></div></div>';
   const q = s => root.querySelector(s);
   const bars = [...root.querySelectorAll('.lv-bar b')];
   let i = 0, playing = false, timers = [], t0 = 0, dur = 0, raf = 0, alive = true;
   const voiceOn = () => canTalk && (!q('.lv-voice') || q('.lv-voice').checked);
   const rate = () => parseFloat(q('.lv-rate').value) || 1;
+  // Narrator: an upbeat science-show-host delivery (slightly higher and quicker), using the liveliest voice the device has.
+  const PEP = /Google US English|Aaron|Alex|Fred|Microsoft Guy|Microsoft Davis|Microsoft Andrew|Daniel|Tom/i, VKEY = 'lessonVoice';
+  let voices = [];
+  function loadVoices() {
+    if (!canTalk || !alive) return;
+    voices = synth.getVoices().filter(v => /^en/i.test(v.lang));
+    const sel = q('.lv-who'); if (!sel || !voices.length) return;
+    let saved = ''; try { saved = localStorage.getItem(VKEY) || ''; } catch {}
+    const pick = voices.find(v => v.name === saved) || voices.find(v => PEP.test(v.name) && /US/i.test(v.lang)) || voices.find(v => PEP.test(v.name)) || voices.find(v => v.default) || voices[0];
+    sel.innerHTML = ''; voices.forEach(v => { const o = document.createElement('option'); o.value = v.name; o.textContent = v.name.replace(/^(Microsoft|Google)\s+/, '').replace(/\s*-.*$/, ''); sel.append(o); });
+    sel.value = pick.name;
+  }
+  const voice = () => { const n = q('.lv-who') && q('.lv-who').value; return voices.find(v => v.name === n) || null; };
+  if (canTalk) { loadVoices(); synth.addEventListener && synth.addEventListener('voiceschanged', loadVoices); }
+  if (q('.lv-who')) q('.lv-who').onchange = e => { try { localStorage.setItem(VKEY, e.target.value); } catch {} };
   const clear = () => { timers.forEach(clearTimeout); timers = []; cancelAnimationFrame(raf); if (canTalk) synth.cancel(); };
   function show(n) {
     const s = scenes[n];
@@ -858,7 +875,7 @@ function mountLessonPlayer(root, data) {
     lines.forEach((d, k) => timers.push(setTimeout(() => d.classList.add('on'), 300 + k * Math.min(1400, (dur - 800) / Math.max(1, lines.length)))));
     t0 = performance.now(); tick();
     if (voiceOn() && text) {
-      const u = new SpeechSynthesisUtterance(text); u.rate = rate();
+      const u = new SpeechSynthesisUtterance(text); u.rate = Math.min(2, rate() * 1.08); u.pitch = 1.15; const v = voice(); if (v) { u.voice = v; u.lang = v.lang; }
       let done = false; const fin = () => { if (done || !playing) return; done = true; reveal(); timers.push(setTimeout(next, 600)); };
       u.onend = fin; u.onerror = () => timers.push(setTimeout(fin, Math.max(0, dur - (performance.now() - t0))));  // no voice: fall back to the timer
       timers.push(setTimeout(fin, dur + 8000));
@@ -887,7 +904,7 @@ function mountLessonPlayer(root, data) {
   q('.lv-next').onclick = () => { const was = playing; stop(); i = Math.min(scenes.length - 1, i + 1); show(i); if (was) play(); else reveal(); };
   q('.lv-prev').onclick = () => { const was = playing; stop(); i = Math.max(0, i - 1); show(i); if (was) play(); else reveal(); };
   show(0); reveal();
-  return () => { alive = false; stop(); document.removeEventListener('fullscreenchange', syncFs); if (document.fullscreenElement === lv) document.exitFullscreen(); };
+  return () => { alive = false; stop(); if (canTalk && synth.removeEventListener) synth.removeEventListener('voiceschanged', loadVoices); document.removeEventListener('fullscreenchange', syncFs); if (document.fullscreenElement === lv) document.exitFullscreen(); };
 }
 function parseLesson(text) {
   const s = String(text || ''), a = s.indexOf('{'), b = s.lastIndexOf('}');
