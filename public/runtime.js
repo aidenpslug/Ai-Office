@@ -9,7 +9,7 @@
     ['Theo', 'Copywriter', 'Short sentences. No jargon.'],
   ];
   const fail = (code, message, text) => Object.assign(new Error(message || code), { code, text });
-  let sb = null, user = null, cfg = null;
+  let sb = null, user = null, cfg = null, me = null;
   let signedIn; const ready = new Promise(r => (signedIn = r));
 
   // ---------- sign-in screen ----------
@@ -30,7 +30,9 @@
   .acct-card code, .acct-card .key { font-family: var(--font-mono); font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; word-break: break-all; }
   .acct-card .key { display: block; padding: 8px 10px; }
   .acct-card .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .acct-card b { color: var(--ink); }`;
+  .acct-card b { color: var(--ink); }
+  .acct-card input { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+  .acct-card .err { color: var(--danger); }`;
   document.head.append(css);
 
   function gate(html) {
@@ -68,7 +70,7 @@
   async function boot() {
     try { cfg = await (await fetch('/api/config', { cache: 'no-store' })).json(); }
     catch { return showProblem("Can't reach the office", 'The server did not answer. Check your connection and reload.'); }
-    if (cfg.dev) { user = { id: 'dev', email: 'dev@localhost' }; signedIn(); return; }
+    if (cfg.dev) { user = { id: 'dev', email: 'dev@localhost' }; await loadMe(); signedIn(); return; }
     if (cfg.missing?.length) return showProblem('Almost set up', `The site still needs these settings in Vercel: <code>${cfg.missing.map(escapeHtml).join('</code>, <code>')}</code>. Add them under Settings, Environment Variables, then redeploy.`);
     try {
       await new Promise((res, rej) => { const el = document.createElement('script'); el.src = '/vendor/supabase.js'; el.onload = res; el.onerror = rej; document.head.append(el); });
@@ -85,6 +87,13 @@
     if (location.hash.includes('access_token')) history.replaceState(null, '', location.pathname);
     const { error } = await sb.from('docs').select('id', { head: true, count: 'exact' }).limit(1);
     if (error) return showProblem('Almost set up', 'The database tables are missing. In Supabase, open SQL Editor, paste the file <code>supabase/schema.sql</code> from the project, and press Run. Then reload this page.');
+    const r = await loadMe();
+    if (r === 'not_allowed') {
+      gate(`<h1>Invite only</h1><p>This office is invite-only, and <b>${escapeHtml(u.email)}</b> isn't on the list yet. Ask the owner to add you, then reload this page.</p>
+        <button type="button" id="gate-out">Sign out</button>`).querySelector('#gate-out').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+      return;
+    }
+    if (r === 'not_configured') return showProblem('Almost set up', 'The database needs an update. In Supabase, open SQL Editor, paste the latest <code>supabase/schema.sql</code> from the project, and press Run. Then reload this page.');
     if (!u.user_metadata?.office_seeded) {
       const { count } = await sb.from('docs').select('id', { head: true, count: 'exact' }).eq('collection', 'staff');
       if (!count) {
@@ -97,6 +106,14 @@
     }
     document.getElementById('gate')?.remove();
     signedIn();
+  }
+  async function loadMe() {
+    try {
+      const r = await fetch('/api/me', { headers: await authHeaders(), cache: 'no-store' });
+      const j = await r.json();
+      if (!r.ok) return j.code || 'error';
+      me = j; return 'ok';
+    } catch { return 'error'; }
   }
   async function authHeaders() {
     const h = { 'content-type': 'application/json' };
@@ -273,6 +290,7 @@
     document.addEventListener('keydown', onKey, true);
     wrap.onclick = e => { if (e.target === wrap) close(); };
     document.body.append(wrap);
+    await loadMe();
     let key = null;
     if (!cfg.dev) { const { data } = await sb.from('jarvis_tokens').select('token').maybeSingle(); key = data?.token || null; }
     else key = 'dev-key';
@@ -280,7 +298,10 @@
     const render = () => {
       wrap.innerHTML = `<div class="acct-card">
         <div class="row"><h2 style="flex:1">Account</h2><button type="button" class="small" data-x>Close</button></div>
-        <p>Signed in as <b>${escapeHtml(user.email)}</b>. Your office, agents and tickets are private to you.</p>
+        <p>Signed in as <b>${escapeHtml(user.email)}</b>${me?.role === 'owner' ? ', the owner of this site' : ''}. Your office, agents and tickets are private to you.</p>
+        ${me ? `<p>Tickets this month: <b>${me.used}${me.monthlyTickets == null ? '' : ' of ' + me.monthlyTickets}</b>${me.monthlyTickets == null ? ' (unlimited)' : ''}. Each time an agent works on a ticket or a revision counts as one.</p>` : ''}
+        ${me?.role === 'owner' ? `<h3>People</h3><p>Only people on this list can use the site. Set how many tickets each person gets per month; leave it empty for unlimited.</p><div data-people><p>Loading…</p></div>
+          <form class="row" data-add><input type="email" required placeholder="their@email.com" aria-label="Email to add" style="flex:2;min-width:180px"><input type="number" min="0" placeholder="Tickets / month" aria-label="Tickets per month" style="flex:1;min-width:110px"><button type="submit" class="primary small">Add person</button></form>` : ''}
         <h3>Talk to Jarvis with Siri</h3>
         ${key ? `<p>Your Jarvis key. Treat it like a password: anyone with it can give orders to your office.</p><span class="key">${escapeHtml(key)}</span>
           <div class="row"><button type="button" class="small primary" data-copy>Copy key</button><button type="button" class="small" data-new>Make a new key</button></div>`
@@ -298,6 +319,14 @@
         <div class="row"><button type="button" data-out>Sign out</button></div>
       </div>`;
       wrap.querySelector('[data-x]').onclick = close;
+      if (me?.role === 'owner') {
+        loadPeople(wrap.querySelector('[data-people]'));
+        wrap.querySelector('[data-add]').onsubmit = async ev => {
+          ev.preventDefault();
+          const [em, n] = ev.target.querySelectorAll('input');
+          if (await savePerson(em.value, n.value)) { em.value = ''; n.value = ''; loadPeople(wrap.querySelector('[data-people]')); }
+        };
+      }
       wrap.querySelector('[data-copy]')?.addEventListener('click', async e => { try { await navigator.clipboard.writeText(key); e.target.textContent = 'Copied'; } catch { e.target.textContent = 'Select and copy it above'; } });
       wrap.querySelector('[data-new]').onclick = async () => {
         if (key && !confirm('Make a new key? Your current shortcut stops working until you paste the new key into it.')) return;
@@ -311,6 +340,39 @@
       wrap.querySelector('[data-out]').onclick = async () => { if (sb) await sb.auth.signOut(); location.reload(); };
     };
     render();
+  }
+  async function peopleApi(method, q = '', body) {
+    const r = await fetch('/api/people' + q, { method, headers: await authHeaders(), body: body && JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw fail(j.code || 'error', j.message || 'Something went wrong.');
+    return j;
+  }
+  async function savePerson(email, tickets) {
+    try { await peopleApi('POST', '', { email, monthlyTickets: tickets === '' ? null : tickets }); return true; }
+    catch (e) { alert(e.message); return false; }
+  }
+  async function loadPeople(box) {
+    if (!box) return;
+    let people;
+    try { ({ people } = await peopleApi('GET')); } catch (e) { box.innerHTML = `<p class="err">${escapeHtml(e.message)}</p>`; return; }
+    box.innerHTML = '';
+    const list = document.createElement('div'); list.style.cssText = 'display:grid;gap:8px';
+    people.forEach(p => {
+      const row = document.createElement('div'); row.className = 'row';
+      row.innerHTML = `<span style="flex:2;min-width:160px"><b style="word-break:break-all">${escapeHtml(p.email)}</b><br><span style="color:var(--muted);font-size:12px">${p.role === 'owner' ? 'Owner' : p.joined ? 'Joined' : 'Invited, not signed in yet'} · ${p.used} used this month</span></span>`;
+      if (p.role === 'owner') { row.insertAdjacentHTML('beforeend', '<span style="color:var(--muted)">Unlimited</span>'); list.append(row); return; }
+      const n = document.createElement('input'); n.type = 'number'; n.min = '0'; n.value = p.monthlyTickets ?? ''; n.placeholder = 'Unlimited';
+      n.setAttribute('aria-label', 'Tickets per month for ' + p.email); n.style.cssText = 'width:110px';
+      const save = document.createElement('button'); save.type = 'button'; save.className = 'small'; save.textContent = 'Save';
+      save.onclick = async () => { if (await savePerson(p.email, n.value)) { save.textContent = 'Saved'; setTimeout(() => (save.textContent = 'Save'), 1500); } };
+      const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'small danger'; rm.textContent = 'Remove';
+      rm.onclick = async () => {
+        if (!confirm(`Remove ${p.email}? They won't be able to use the site until you add them again.`)) return;
+        try { await peopleApi('DELETE', '?email=' + encodeURIComponent(p.email)); loadPeople(box); } catch (e) { alert(e.message); }
+      };
+      row.append(n, save, rm); list.append(row);
+    });
+    box.append(list);
   }
   function addAccountButton() {
     const bar = document.querySelector('.top .actions');

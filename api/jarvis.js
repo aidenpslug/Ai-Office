@@ -2,7 +2,7 @@
 // Headers: Authorization: Bearer <your Jarvis key>   (the office page shows it under Account > Siri)
 // Body (JSON): { "text": "Bob, can you tidy up this page", "image": "<optional base64 screenshot>" }
 // Answers with plain text for Siri to speak (or JSON when the body has "format": "json").
-import { config, adminDb, checkAllowed, spendCall, quickJson, officeStore, codeFor, OfficeError } from './_lib.js';
+import { config, adminDb, memberFor, spendCall, quickJson, officeStore, codeFor, OfficeError } from './_lib.js';
 
 const PALETTE = ['#3fa37a', '#e06fa6', '#5a8de0', '#e0b43f', '#e0705a', '#8a6bd1', '#2fa7b8', '#b0793f'];
 const STATUS = { todo: 'to do', working: 'in progress', review: 'PR waiting for review', changes: 'changes requested', merged: 'done' };
@@ -17,7 +17,7 @@ async function ownerOf(request, body) {
   if (error) throw new OfficeError('not_configured', 'The database is not set up yet.', 503);
   if (!data) throw new OfficeError('bad_key', "That Jarvis key isn't recognised. Make a new one in your office under Account.", 401);
   const { data: u } = await db.auth.admin.getUserById(data.user_id);
-  checkAllowed(u?.user?.email);
+  await memberFor(u?.user?.email);
   return data.user_id;
 }
 

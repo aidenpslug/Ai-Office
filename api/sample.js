@@ -1,7 +1,7 @@
 // POST /api/sample: the office page asks Claude for something.
 //   { mode: "run", prompt, image? }  -> streams lines of JSON: {"d":"text"} ... then {"end":true,"truncated":false} or {"error":{...}}
 //   { mode: "json", prompt }         -> { result } (used by Jarvis in the page)
-import { userFromRequest, spendCall, runAgent, quickJson, toMessages, codeFor, errorResponse, json, OfficeError } from './_lib.js';
+import { userFromRequest, spendCall, spendTicket, runAgent, quickJson, toMessages, codeFor, errorResponse, json, OfficeError } from './_lib.js';
 
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 
@@ -13,14 +13,14 @@ export async function POST(request) {
     const messages = toMessages(body.prompt);
     if (body.image && (!IMAGE_TYPES.includes(body.image.media_type) || typeof body.image.data !== 'string'))
       throw new OfficeError('invalid_request', 'That screenshot type is not supported.');
-    await spendCall(user.id);
-
     if (body.mode === 'json') {
       if (typeof body.prompt !== 'string') throw new OfficeError('invalid_request', 'Bad request.');
+      await spendCall(user.id);
       const result = await quickJson(body.prompt, request.signal);
       return json({ result });
     }
 
+    await spendTicket(user);
     const enc = new TextEncoder();
     const ctl = new AbortController();
     request.signal?.addEventListener('abort', () => ctl.abort());
