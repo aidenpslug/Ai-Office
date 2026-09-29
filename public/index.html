@@ -126,6 +126,7 @@ textarea { resize: vertical; min-height: 60px; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .btnrow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .err { font-size: 12.5px; color: var(--warn); margin: 0; }
+.err-detail { font-size: 11.5px; opacity: .7; margin: 2px 0 0; overflow-wrap: anywhere; }
 .list { display: flex; flex-direction: column; gap: 4px; }
 .list button { text-align: left; display: flex; gap: 6px; align-items: center; background: var(--bg); }
 .list button .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -318,6 +319,9 @@ const ERR = {
   daily_limit: "That's today's Jarvis allowance. It resets at midnight (UTC).", ticket_limit: "You've used this month's tickets. Ask the office owner for more.",
   bad_api_key: "The site's Claude API key isn't working. Check it in Vercel.", not_configured: "The site isn't fully set up yet.",
   not_allowed: "Your account isn't allowed to use this office.", network: 'Lost the connection mid-task. Try again.',
+  bad_image: "The photo's format can't be read. Attach a screenshot or a JPG of the problem instead.",
+  invalid_request: "Claude couldn't read this ticket or its photo. Try a clearer screenshot of the problem.",
+  upstream_error: 'Claude had a hiccup. Try again.', missing: "The attached photo couldn't be found. Attach it again.",
 };
 
 const $ = id => document.getElementById(id);
@@ -326,7 +330,7 @@ const uid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(
 const getS = id => S.staff.find(s => s.id === id);
 const getT = id => S.tickets.find(t => t.id === id);
 const staffSorted = () => S.staff.slice().sort((a, b) => (a.hiredAt || 0) - (b.hiredAt || 0));
-function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, 3200); }
+function toast(msg, ms = 3200) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, ms); }
 
 // ================= storage =================
 const writeQ = {};
@@ -676,7 +680,7 @@ update.ticket = box => {
   dyn.dataset.sig = sig; dyn.innerHTML = '';
   const row = document.createElement('div'); row.className = 'btnrow';
   const btn = (label, fn, cls, dis) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls || ''; b.textContent = label; b.disabled = !!dis; b.onclick = fn; row.append(b); };
-  if (t.lastError) dyn.insertAdjacentHTML('beforeend', `<p class="err">${esc(t.lastError)}</p>`);
+  if (t.lastError) dyn.insertAdjacentHTML('beforeend', `<p class="err">${esc(t.lastError)}</p>` + (t.lastErrorDetail && !/^[a-z_]+$/.test(t.lastErrorDetail) ? `<p class="err-detail">${esc(t.lastErrorDetail)}</p>` : ''));
   const src = t.handoffFrom && getT(t.handoffFrom);
   if (src) { const b = document.createElement('button'); b.type = 'button'; b.className = 'small ghost'; b.textContent = `Builds on #${src.num} ${src.title}`; b.onclick = () => select('ticket', src.id); dyn.append(b); }
   if (t.imageId || memImages[t.id]) {
@@ -971,8 +975,9 @@ build.newticket = box => {
     const go = e.submitter && e.submitter.value === '1';
     const t = { id: uid('t'), num: nextNum('num'), title: f.elements.title.value.trim(), detail: f.elements.detail.value.trim(), kind: f.elements.kind.value, assignee: f.elements.who.value || null, status: 'todo', createdAt: Date.now() };
     if (!t.title) return;
-    await putTicket(t);
     const photo = f.elements.photo.files[0];
+    if (photo && window.officeCanRead && !(await window.officeCanRead(photo))) return toast(ERR.bad_image, 8000);
+    await putTicket(t);
     if (photo) await attachBlob(t.id, photo);
     select('ticket', t.id);
     const s = getS(t.assignee);
@@ -1149,7 +1154,10 @@ async function attachBlob(ticketId, blob) {
   try {
     const r = await S.assets.upload(blob, { type: blob.type && /^image\/(png|jpeg|gif|webp)$/.test(blob.type) ? blob.type : 'image/png' });
     await patchTicket(ticketId, { imageId: r.id });
-  } catch { toast("The photo is attached for now but couldn't be saved."); }
+  } catch (e) {
+    if (e && e.code === 'bad_image') { delete memImages[ticketId]; toast(e.message, 8000); }
+    else toast("The photo is attached for now but couldn't be saved.");
+  }
 }
 async function attachImageTo(ticketId) {
   if (!J.image) return false;

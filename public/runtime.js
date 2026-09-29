@@ -133,17 +133,28 @@
     return h;
   }
 
-  // ---------- images: shrink big screenshots before sending ----------
-  async function shrink(blob, max = 1600) {
-    try {
-      const bmp = await createImageBitmap(blob);
-      const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
-      if (k === 1 && blob.size < 1_500_000 && /^image\/(png|jpeg|webp|gif)$/.test(blob.type)) return blob;
-      const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
-      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
-      return await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
-    } catch { return blob; }
+  // ---------- images: redraw every photo as a JPEG Claude can read ----------
+  // Phone photos can be HEIC or mislabeled, which Claude rejects, so everything is decoded and re-encoded here.
+  const BAD_IMAGE = "This photo's format can't be read here. Take a screenshot of the problem, or save the photo as a JPG, and attach that instead.";
+  async function decode(blob) {
+    try { return await createImageBitmap(blob); } catch {}
+    const url = URL.createObjectURL(blob);
+    try { const img = new Image(); img.src = url; await img.decode(); return img; }
+    catch { throw fail('bad_image', BAD_IMAGE); }
+    finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
   }
+  async function shrink(blob, max = 1600) {
+    const pic = await decode(blob);
+    const w = pic.width || pic.naturalWidth, h = pic.height || pic.naturalHeight;
+    if (!w || !h) throw fail('bad_image', BAD_IMAGE);
+    const k = Math.min(1, max / Math.max(w, h));
+    const c = document.createElement('canvas'); c.width = Math.round(w * k); c.height = Math.round(h * k);
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(pic, 0, 0, c.width, c.height);
+    const out = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.88));
+    if (!out) throw fail('bad_image', BAD_IMAGE);
+    return out;
+  }
+  window.officeCanRead = async blob => { try { const p = await decode(blob); p.close?.(); return true; } catch { return false; } };
   const toB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); });
 
   // ---------- sample: ask Claude through the server ----------
@@ -157,7 +168,7 @@
   async function sample(prompt, opts = {}) {
     const body = { mode: 'run', prompt };
     const img = Array.isArray(opts.images) ? opts.images[0] : opts.images;
-    if (img) { const small = await shrink(img); body.image = { media_type: small.type || 'image/png', data: await toB64(small) }; }
+    if (img) { const small = await shrink(img); body.image = { media_type: 'image/jpeg', data: await toB64(small) }; }
     const res = await post(body, opts.signal);
     const reader = res.body.getReader(), dec = new TextDecoder();
     let buf = '', text = '';
@@ -264,10 +275,9 @@
   const assets = {
     async upload(blob, { type } = {}) {
       const small = await shrink(blob);
-      const ext = small.type === 'image/png' ? '.png' : '.jpg';
-      const id = crypto.randomUUID() + ext;
-      if (cfg.dev) { await fetch('/dev/blob/' + id, { method: 'PUT', headers: { 'content-type': small.type || type }, body: small }); return { id }; }
-      const { error } = await sb.storage.from('office').upload(`${user.id}/${id}`, small, { contentType: small.type || type || 'image/png' });
+      const id = crypto.randomUUID() + '.jpg';
+      if (cfg.dev) { await fetch('/dev/blob/' + id, { method: 'PUT', headers: { 'content-type': 'image/jpeg' }, body: small }); return { id }; }
+      const { error } = await sb.storage.from('office').upload(`${user.id}/${id}`, small, { contentType: 'image/jpeg' });
       if (error) throw fail('upload_failed', error.message);
       return { id };
     },
